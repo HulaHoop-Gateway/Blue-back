@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.hulahoop'
 version = '0.0.1-SNAPSHOT'
-description = 'blue-back'
+description = 'bikeway-back'
 
 java {
     toolchain {
@@ -19,10 +19,31 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter'
+    // REST API 기능
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Spring Security (JWT 로그인용)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // Spring Data JPA
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // MyBatis (필요시)
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
+
+    // DB 연결 (MySQL)
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // JWT 라이브러리
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // 테스트 의존성
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+
 
 tasks.named('test') {
     useJUnitPlatform()
