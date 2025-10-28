@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.hulahoop'
 version = '0.0.1-SNAPSHOT'
-description = 'bikeway-back'
+description = 'hulahoop-blue-backend'
 
 java {
     toolchain {
@@ -19,31 +19,33 @@ repositories {
 }
 
 dependencies {
-    // REST API 기능
+    // 🌐 REST API
     implementation 'org.springframework.boot:spring-boot-starter-web'
 
-    // Spring Security (JWT 로그인용)
+    // ⚡ WebClient (Gemini API 호출용)
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+    // 🔒 Security & JWT
     implementation 'org.springframework.boot:spring-boot-starter-security'
-
-    // Spring Data JPA
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-
-    // MyBatis (필요시)
-    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
-
-    // DB 연결 (MySQL)
-    runtimeOnly 'com.mysql:mysql-connector-j'
-
-    // JWT 라이브러리
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
-    // 테스트 의존성
+    // 🗃️ JPA + MyBatis (필요 시 병행)
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // ⚙️ 설정 자동 완성/매핑 지원
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // 📊 Actuator (선택)
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // 🧪 테스트
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
-
 
 tasks.named('test') {
     useJUnitPlatform()
