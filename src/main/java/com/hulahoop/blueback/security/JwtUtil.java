@@ -2,37 +2,49 @@ package com.hulahoop.blueback.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
 import java.security.Key;
+import java.util.Base64;
 import java.util.Date;
 
 @Component
 public class JwtUtil {
 
-    // HS256용 안전한 키 생성
-    private final Key SECRET_KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    @Value("${jwt.secret}")
+    private String secret;
 
-    // 토큰 만료 시간: 1시간
-    private final long EXPIRATION_MS = 1000 * 60 * 60;
+    @Value("${jwt.expiration-ms}")
+    private long expirationMs;
+
+    private Key secretKey;
+
+    // Bean 초기화 시점에 secretKey 생성
+    @PostConstruct
+    public void init() {
+        // Base64 인코딩 후 HMAC SHA256 키 생성
+        secretKey = Keys.hmacShaKeyFor(Base64.getEncoder().encode(secret.getBytes()));
+    }
 
     // 토큰 생성
     public String generateToken(String username) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + EXPIRATION_MS);
+        Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(SECRET_KEY) // 안전한 Key 사용
+                .signWith(secretKey)
                 .compact();
     }
 
     // 토큰에서 username 추출
     public String extractUsername(String token) {
         return Jwts.parserBuilder()
-                .setSigningKey(SECRET_KEY)
+                .setSigningKey(secretKey)
                 .build()
                 .parseClaimsJws(token)
                 .getBody()
@@ -42,7 +54,10 @@ public class JwtUtil {
     // 토큰 검증
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(SECRET_KEY).build().parseClaimsJws(token);
+            Jwts.parserBuilder()
+                    .setSigningKey(secretKey)
+                    .build()
+                    .parseClaimsJws(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             return false;
