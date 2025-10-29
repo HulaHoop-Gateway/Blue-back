@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-    // 🌐 REST API
+    // 🌐 REST API (Spring MVC)
     implementation 'org.springframework.boot:spring-boot-starter-web'
 
     // ⚡ WebClient (Gemini API 호출용)
@@ -31,8 +31,7 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
-    // 🗃️ JPA + MyBatis (필요 시 병행)
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // 🗃️ MyBatis (DB 접근)
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
