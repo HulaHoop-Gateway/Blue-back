@@ -1,4 +1,4 @@
-package com.hulahoop.blueback.dto;
+package com.hulahoop.blueback.ai.model.dto;
 
 public class AiResponseDTO {
     private String result; // Gemini 응답 요약 결과

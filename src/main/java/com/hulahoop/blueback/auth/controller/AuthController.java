@@ -1,7 +1,7 @@
-package com.hulahoop.blueback.controller;
+package com.hulahoop.blueback.auth.controller;
 
-import com.hulahoop.blueback.dto.LoginRequest;
-import com.hulahoop.blueback.service.AuthService;
+import com.hulahoop.blueback.auth.model.dto.LoginRequest;
+import com.hulahoop.blueback.auth.model.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +19,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
-        String token = authService.login(loginRequest.getUsername(), loginRequest.getPassword());
+        String token = authService.login(loginRequest.getId(), loginRequest.getPassword());
         return ResponseEntity.ok(Map.of("token", token));
     }
 }

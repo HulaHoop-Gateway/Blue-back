@@ -31,7 +31,12 @@ public class SecurityConfig {
                 .cors().and()
                 .csrf().disable()
                 .authorizeHttpRequests()
-                .requestMatchers("/api/login", "/api/signup").permitAll()
+                // ✅ 회원가입 & 아이디중복 허용
+                .requestMatchers(
+                        "/api/login",
+                        "/api/member/signup",
+                        "/api/member/check-id"
+                ).permitAll()
                 .anyRequest().authenticated()
                 .and()
                 .sessionManagement()
@@ -40,9 +45,9 @@ public class SecurityConfig {
                 .formLogin().disable();
 
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
+
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {

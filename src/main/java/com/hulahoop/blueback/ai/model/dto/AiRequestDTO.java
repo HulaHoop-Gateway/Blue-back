@@ -1,4 +1,4 @@
-package com.hulahoop.blueback.dto;
+package com.hulahoop.blueback.ai.model.dto;
 
 public class AiRequestDTO {
     private String message; // 사용자가 입력한 자연어 요청

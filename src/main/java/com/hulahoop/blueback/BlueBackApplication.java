@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@MapperScan("com.hulahoop.blueback.dao")
+@MapperScan("com.hulahoop.blueback.member.model.dao")
 public class BlueBackApplication {
 
     public static void main(String[] args) {

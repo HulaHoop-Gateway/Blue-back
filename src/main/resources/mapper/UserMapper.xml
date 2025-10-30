@@ -3,50 +3,37 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.hulahoop.blueback.dao.UserMapper">
+<mapper namespace="com.hulahoop.blueback.member.model.dao.UserMapper">
 
-    <!-- username(id)으로 회원 조회 -->
-    <select id="findByUsername" parameterType="string" resultType="com.hulahoop.blueback.dto.MemberDTO">
+    <!-- id로 회원 조회 -->
+    <select id="findById" parameterType="string" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT *
         FROM T_Member
-        WHERE id = #{username}
-    </select>
-
-    <!-- member_code로 회원 조회 -->
-    <select id="findByMemberCode" parameterType="string" resultType="com.hulahoop.blueback.dto.MemberDTO">
-        SELECT *
-        FROM T_Member
-        WHERE member_code = #{memberCode}
+        WHERE id = #{id}
     </select>
 
     <!-- 회원 등록 -->
-    <insert id="insertMember" parameterType="com.hulahoop.blueback.dto.MemberDTO">
+    <insert id="insertMember" parameterType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         INSERT INTO T_Member (
-        member_code, name, id, password, phone_num, email, address, user_type, notifiation_status
+        member_code, name, id, password, phone_num, email, address, user_type, notification_status
         ) VALUES (
-        #{memberCode}, #{name}, #{username}, #{password}, #{phoneNum},
+        #{memberCode}, #{name}, #{id}, #{password}, #{phoneNum},
         #{email}, #{address}, #{userType}, #{notificationStatus}
         )
     </insert>
 
-    <!-- 회원 정보 수정 -->
-    <update id="updateMember" parameterType="com.hulahoop.blueback.dto.MemberDTO">
-        UPDATE T_Member
-        SET
-        name = #{name},
-        password = #{password},
-        phone_num = #{phoneNum},
-        email = #{email},
-        address = #{address},
-        user_type = #{userType},
-        notifiation_status = #{notificationStatus}
-        WHERE member_code = #{memberCode}
-    </update>
+    <!-- 아이디 중복 확인 -->
+    <select id="countById" parameterType="string" resultType="int">
+        SELECT COUNT(*) FROM T_Member WHERE id = #{id}
+    </select>
 
-    <!-- 회원 삭제 -->
-    <delete id="deleteMember" parameterType="string">
-        DELETE FROM T_Member
-        WHERE member_code = #{memberCode}
-    </delete>
+    <!-- 마지막 회원 코드 조회 -->
+    <select id="findLastMemberCode" resultType="string">
+        SELECT member_code
+        FROM T_Member
+        WHERE member_code LIKE 'U%'
+        ORDER BY member_code DESC
+        LIMIT 1
+    </select>
 
 </mapper>

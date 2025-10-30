@@ -1,4 +1,4 @@
-package com.hulahoop.blueback.dto;
+package com.hulahoop.blueback.ai.model.dto;
 
 import java.util.List;
 import java.util.Map;

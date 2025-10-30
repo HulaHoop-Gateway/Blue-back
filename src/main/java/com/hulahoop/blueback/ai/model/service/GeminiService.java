@@ -1,4 +1,4 @@
-package com.hulahoop.blueback.service;
+package com.hulahoop.blueback.ai.model.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
