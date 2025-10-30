@@ -1,4 +1,4 @@
-package com.hulahoop.blueback.dto;
+package com.hulahoop.blueback.auth.model.dto;
 
 public class TokenResponse {
 

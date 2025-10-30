@@ -1,6 +1,6 @@
-package com.hulahoop.blueback.controller;
+package com.hulahoop.blueback.ai.controller;
 
-import com.hulahoop.blueback.service.IntentService;
+import com.hulahoop.blueback.ai.model.service.IntentService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
