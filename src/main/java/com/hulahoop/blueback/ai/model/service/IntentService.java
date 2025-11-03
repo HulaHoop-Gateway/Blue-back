@@ -17,7 +17,7 @@ public class IntentService {
         this.restTemplate = builder.build();
     }
 
-    // ✅ 오직 게이트웨이로만 전달 (게이트웨이가 intent를 분기함)
+    //  오직 게이트웨이로만 전달 (게이트웨이가 intent를 분기함)
     public Map<String, Object> processIntent(String intent, Map<String, Object> data) {
         String gatewayUrl = "http://localhost:8080/api/gateway/dispatch";  // ✅ 게이트웨이 엔드포인트
 
