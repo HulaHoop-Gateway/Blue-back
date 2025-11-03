@@ -44,14 +44,15 @@ public class GeminiService {
         // 취소 처리
         if (isCancelIntent(prompt)) {
             resetFlow();
-            return "예매 흐름을 종료했습니다. 필요하시면 다시 말씀해 주세요 😊";
+            return "알겠습니다. 영화 예약을 취소하거나 더 이상 진행하지 않으시겠다는 말씀이시죠? "
+                    + "\n혹시 다른 궁금한 점이나 제가 도와드릴 일이 있으신가요?";
         }
 
-        // ✅ 자전거는 영화 flow와 무관 — 바로 처리!
+        // 🚲 자전거는 영화 flow와 무관 — 바로 처리
         String bikeResponse = handleBikeIntent(prompt);
         if (bikeResponse != null) return bikeResponse;
 
-        // ✅ 영화 상태머신 동작
+        // 🎬 영화 상태머신 동작
         String flowReply = handleMovieFlow(prompt);
         if (flowReply != null) return flowReply;
 
@@ -61,6 +62,7 @@ public class GeminiService {
     /* ----------------- 🎬 영화 단계형 흐름 ----------------- */
     private String handleMovieFlow(String userInput) {
 
+        // Step1: 시작 의도 감지 → 가까운 영화관 조회
         if (currentStep == Step.IDLE && isStartBookingIntent(userInput)) {
             Map<String, Object> result = intentService.processIntent("movie_booking_step1", Map.of());
             List<Map<String, Object>> cinemas = safeList(result.get("cinemas"));
@@ -72,6 +74,7 @@ public class GeminiService {
                     + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
 
+        // Step2: 지점 선택 → 해당 지점 오늘(또는 현재시각 이후) 상영 목록
         if (currentStep == Step.BRANCH_SELECT) {
             Integer idx = resolveIndexFromInput(userInput, lastCinemas.size());
             if (idx == null) return "지점 번호를 다시 입력해주세요. 예) 1번";
@@ -79,8 +82,10 @@ public class GeminiService {
             String branchName = String.valueOf(lastCinemas.get(idx - 1).get("branch_name"));
             bookingContext.put("branchName", branchName);
 
-            Map<String, Object> result = intentService.processIntent("movie_booking_step2",
-                    Map.of("branchName", branchName));
+            Map<String, Object> result = intentService.processIntent(
+                    "movie_booking_step2",
+                    Map.of("branchName", branchName)
+            );
 
             List<Map<String, Object>> movies = safeList(result.get("movies"));
             lastMovies = movies;
@@ -91,21 +96,28 @@ public class GeminiService {
                     + "\n예매할 영화 번호를 입력해주세요. 예) 2번";
         }
 
+        // Step3: 영화(=회차) 선택 → 좌석 현황 조회
         if (currentStep == Step.MOVIE_SELECT) {
             Integer idx = resolveIndexFromInput(userInput, lastMovies.size());
             if (idx == null) return "영화 번호를 다시 입력해주세요. 예) 2번";
 
             Map<String, Object> selected = lastMovies.get(idx - 1);
+
+            // scheduleNum 추출 (alias가 scheduleNum 또는 scheduleId인 경우 모두 대응)
+            Integer scheduleNum = extractScheduleNum(selected);
+            if (scheduleNum == null) return "선택한 상영 정보에서 회차 번호를 찾지 못했습니다.";
+
             Map<String, Object> movieCtx = new HashMap<>();
             movieCtx.put("index", idx);
             movieCtx.put("movieTitle", selected.get("movieTitle"));
             movieCtx.put("screeningDate", selected.get("screeningDate"));
-            movieCtx.put("scheduleId", selected.get("scheduleId"));
+            movieCtx.put("scheduleNum", scheduleNum); // <- 통일
             bookingContext.put("selectedMovie", movieCtx);
 
-            Integer scheduleId = toInt(selected.get("scheduleId"));
-            Map<String, Object> result = intentService.processIntent("movie_booking_step3",
-                    Map.of("scheduleId", scheduleId));
+            Map<String, Object> result = intentService.processIntent(
+                    "movie_booking_step3",
+                    Map.of("scheduleNum", scheduleNum)
+            );
 
             List<Map<String, Object>> seats = safeList(result.get("seats"));
             lastSeats = seats;
@@ -117,6 +129,7 @@ public class GeminiService {
                     + "\n좌석번호를 입력해주세요. 예) A1, A2";
         }
 
+        // Step4: 좌석 선택 → HOLD 예약
         if (currentStep == Step.SEAT_SELECT) {
             List<String> requestedSeats = parseSeats(userInput);
             if (requestedSeats.isEmpty()) return "좌석 형식을 다시 입력해주세요. 예) A1, A2";
@@ -135,14 +148,23 @@ public class GeminiService {
             }
 
             Map<String, Object> movieCtx = safeMap(bookingContext.get("selectedMovie"));
-            Integer scheduleId = toInt(movieCtx.get("scheduleId"));
-            String memberName = "user01";
+            Integer scheduleNum = toInt(movieCtx.get("scheduleNum"));
+            if (scheduleNum == null) return "예약 처리 중 오류: 회차 번호가 유실되었습니다.";
+
+            String memberName = "user01"; // TODO: 로그인 사용자명으로 교체 권장
 
             for (Map<String, Object> seat : selectedSeats) {
-                intentService.processIntent("movie_booking_step4",
-                        Map.of("scheduleId", scheduleId,
-                                "seatCode", seat.get("seat_code"),
-                                "memberName", memberName));
+                Integer seatCode = extractSeatCode(seat); // seatCode 또는 seat_code 모두 허용
+                if (seatCode == null) return "예약 처리 중 오류: 좌석 코드가 유실되었습니다.";
+
+                intentService.processIntent(
+                        "movie_booking_step4",
+                        Map.of(
+                                "scheduleNum", scheduleNum,
+                                "seatCode", seatCode,
+                                "memberName", memberName
+                        )
+                );
             }
 
             resetFlow();
@@ -168,7 +190,9 @@ public class GeminiService {
             for (Map<String, Object> b : bikes) {
                 sb.append(i++).append(". 번호: ").append(b.get("bicycleCode")).append("\n")
                         .append("   종류: ").append(b.get("bicycleType")).append("\n")
-                        .append("   상태: ").append(b.get("status")).append("\n\n");
+                        .append("   상태: ").append(b.get("status")).append("\n\n")
+                        .append("   위도: ").append(b.get("latitude")).append("\n")
+                        .append("   경도: ").append(b.get("longitude")).append("\n");
             }
             return sb.toString().trim();
         }
@@ -232,11 +256,13 @@ public class GeminiService {
         return out;
     }
 
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> safeList(Object o) {
         if (o instanceof List) return (List<Map<String, Object>>) o;
         return new ArrayList<>();
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> safeMap(Object o) {
         if (o instanceof Map) return (Map<String, Object>) o;
         return new HashMap<>();
@@ -273,6 +299,22 @@ public class GeminiService {
         } catch (Exception e) {
             return "AI 호출 중 오류: " + e.getMessage();
         }
+    }
+
+    /* ----------------- 🔧 호환 헬퍼 ----------------- */
+
+    // movies row에서 scheduleNum(alias: scheduleNum 또는 scheduleId)을 안전하게 추출
+    private Integer extractScheduleNum(Map<String, Object> movieRow) {
+        Object v = movieRow.get("scheduleNum");
+        if (v == null) v = movieRow.get("scheduleId");
+        return toInt(v);
+    }
+
+    // seats row에서 seatCode(alias: seatCode 또는 seat_code)를 안전하게 추출
+    private Integer extractSeatCode(Map<String, Object> seatRow) {
+        Object v = seatRow.get("seatCode");
+        if (v == null) v = seatRow.get("seat_code");
+        return toInt(v);
     }
 
     public void resetConversation() {
