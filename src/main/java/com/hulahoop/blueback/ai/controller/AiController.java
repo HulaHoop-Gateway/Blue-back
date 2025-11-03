@@ -1,9 +1,11 @@
+// src/main/java/com/hulahoop/blueback/ai/controller/AiController.java
 package com.hulahoop.blueback.ai.controller;
 
 import com.hulahoop.blueback.ai.model.service.GeminiService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Map;
 
 @RestController
@@ -17,16 +19,22 @@ public class AiController {
     }
 
     @PostMapping("/ask")
-    public ResponseEntity<Map<String, String>> askAI(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Map<String, String>> ask(
+            @RequestBody Map<String, String> request,
+            Principal principal
+    ) {
         String message = request.get("message");
-        String response = geminiService.askGemini(message);
+        // principal should not be null if security is configured and request is authenticated
+        String userId = (principal != null) ? principal.getName() : "guest";
+
+        String response = geminiService.askGemini(message, userId);
         return ResponseEntity.ok(Map.of("message", response));
     }
 
-    // 대화 리셋용 (원할 때 프론트에서 newChat 시 호출)
     @PostMapping("/reset")
-    public ResponseEntity<Void> resetConversation() {
-        geminiService.resetConversation();
-        return ResponseEntity.ok().build();
+    public ResponseEntity<Map<String, String>> resetConversation(Principal principal) {
+        String userId = (principal != null) ? principal.getName() : "guest";
+        geminiService.resetConversation(userId);
+        return ResponseEntity.ok(Map.of("message", "reset ok"));
     }
 }

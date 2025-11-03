@@ -1,3 +1,4 @@
+// src/main/java/com/hulahoop/blueback/ai/model/service/GeminiService.java
 package com.hulahoop.blueback.ai.model.service;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -6,10 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * GeminiService (영화 단계형 + 자전거 조회형)
- */
 @Service
 public class GeminiService {
 
@@ -22,260 +21,292 @@ public class GeminiService {
     private final String baseUrl =
             "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
-    private final List<Map<String, Object>> conversationHistory = new ArrayList<>();
+    /** 유저별 세션 저장 (스레드 안전) */
+    private final Map<String, UserSession> userSessions = new ConcurrentHashMap<>();
+
+    private static class UserSession {
+        List<Map<String, Object>> history = new ArrayList<>();
+        Step step = Step.IDLE;
+        Map<String, Object> bookingContext = new HashMap<>();
+        List<Map<String, Object>> lastCinemas = new ArrayList<>();
+        List<Map<String, Object>> lastMovies = new ArrayList<>();
+        List<Map<String, Object>> lastSeats = new ArrayList<>();
+    }
 
     private enum Step { IDLE, BRANCH_SELECT, MOVIE_SELECT, SEAT_SELECT }
-    private Step currentStep = Step.IDLE;
-
-    private final Map<String, Object> bookingContext = new HashMap<>();
-    private List<Map<String, Object>> lastCinemas = new ArrayList<>();
-    private List<Map<String, Object>> lastMovies = new ArrayList<>();
-    private List<Map<String, Object>> lastSeats = new ArrayList<>();
 
     public GeminiService(RestTemplate restTemplate, IntentService intentService) {
         this.restTemplate = restTemplate;
         this.intentService = intentService;
     }
 
-    public synchronized String askGemini(String prompt) {
+    /**
+     * 유저별 히스토리 적용된 askGemini
+     * @param prompt 유저 입력
+     * @param userId 유저 아이디 (Principal.getName())
+     */
+    public synchronized String askGemini(String prompt, String userId) {
+        if (userId == null || userId.isBlank()) userId = "guest";
 
-        conversationHistory.add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
+        userSessions.putIfAbsent(userId, new UserSession());
+        UserSession session = userSessions.get(userId);
+
+        // 대화 히스토리 저장
+        session.history.add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
 
         // 취소 처리
         if (isCancelIntent(prompt)) {
-            resetFlow();
-            return "예매 흐름을 종료했습니다. 필요하시면 다시 말씀해 주세요 😊";
+            resetFlow(session);
+            return "✅ 예약이 취소되었습니다. 다른 도움이 필요하신가요?";
         }
 
-        // ✅ 자전거는 영화 flow와 무관 — 바로 처리!
-        String bikeResponse = handleBikeIntent(prompt);
-        if (bikeResponse != null) return bikeResponse;
+        // 자전거 관련 즉시 응답
+        String bikeRes = handleBikeIntent(prompt);
+        if (bikeRes != null) {
+            // 모델 히스토리에 봇 응답도 추가하면 좋음
+            session.history.add(Map.of("role", "model", "parts", List.of(Map.of("text", bikeRes))));
+            return bikeRes;
+        }
 
-        // ✅ 영화 상태머신 동작
-        String flowReply = handleMovieFlow(prompt);
-        if (flowReply != null) return flowReply;
+        // 영화 예약 상태머신 처리 (userId 전달)
+        String movieReply = handleMovieFlow(prompt, session, userId);
+        if (movieReply != null) {
+            session.history.add(Map.of("role", "model", "parts", List.of(Map.of("text", movieReply))));
+            return movieReply;
+        }
 
-        return callGeminiFreeChat();
+        // 자유대화: Gemini 호출 (session.history 사용)
+        String aiReply = callGeminiFreeChat(session.history);
+        // 이미 callGeminiFreeChat이 히스토리에 모델 응답을 추가함
+        return aiReply;
     }
 
-    /* ----------------- 🎬 영화 단계형 흐름 ----------------- */
-    private String handleMovieFlow(String userInput) {
+    /* ------------------- 영화 상태 머신 ------------------- */
+    private String handleMovieFlow(String userInput, UserSession s, String userId) {
 
-        if (currentStep == Step.IDLE && isStartBookingIntent(userInput)) {
-            Map<String, Object> result = intentService.processIntent("movie_booking_step1", Map.of());
-            List<Map<String, Object>> cinemas = safeList(result.get("cinemas"));
+        if (s.step == Step.IDLE && isStartBookingIntent(userInput)) {
+            Map<String, Object> res = intentService.processIntent("movie_booking_step1", Map.of());
+            List<Map<String, Object>> cinemas = safeList(res.get("cinemas"));
 
-            lastCinemas = cinemas;
-            currentStep = Step.BRANCH_SELECT;
-
-            return formatCinemas(cinemas)
-                    + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
+            s.lastCinemas = cinemas;
+            s.step = Step.BRANCH_SELECT;
+            return formatCinemas(cinemas) + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
 
-        if (currentStep == Step.BRANCH_SELECT) {
-            Integer idx = resolveIndexFromInput(userInput, lastCinemas.size());
-            if (idx == null) return "지점 번호를 다시 입력해주세요. 예) 1번";
+        if (s.step == Step.BRANCH_SELECT) {
+            Integer idx = resolveIndexFromInput(userInput, s.lastCinemas.size());
+            if (idx == null) return "⚠️ 지점 번호를 다시 입력해주세요. 예) 1번";
 
-            String branchName = String.valueOf(lastCinemas.get(idx - 1).get("branch_name"));
-            bookingContext.put("branchName", branchName);
+            String branchName = String.valueOf(s.lastCinemas.get(idx - 1).get("branch_name"));
+            s.bookingContext.put("branchName", branchName);
 
-            Map<String, Object> result = intentService.processIntent("movie_booking_step2",
-                    Map.of("branchName", branchName));
+            Map<String, Object> res = intentService.processIntent("movie_booking_step2", Map.of("branchName", branchName));
+            List<Map<String, Object>> movies = safeList(res.get("movies"));
 
-            List<Map<String, Object>> movies = safeList(result.get("movies"));
-            lastMovies = movies;
-            currentStep = Step.MOVIE_SELECT;
-
-            return "선택한 지점: " + branchName + "\n\n"
-                    + formatMovies(movies)
-                    + "\n예매할 영화 번호를 입력해주세요. 예) 2번";
+            s.lastMovies = movies;
+            s.step = Step.MOVIE_SELECT;
+            return "🎬 선택한 지점: " + branchName + "\n\n" + formatMovies(movies) + "\n예매할 영화 번호를 입력해주세요. 예) 2번";
         }
 
-        if (currentStep == Step.MOVIE_SELECT) {
-            Integer idx = resolveIndexFromInput(userInput, lastMovies.size());
-            if (idx == null) return "영화 번호를 다시 입력해주세요. 예) 2번";
+        if (s.step == Step.MOVIE_SELECT) {
+            Integer idx = resolveIndexFromInput(userInput, s.lastMovies.size());
+            if (idx == null) return "⚠️ 영화 번호를 다시 입력해주세요. 예) 2번";
 
-            Map<String, Object> selected = lastMovies.get(idx - 1);
+            Map<String, Object> selected = s.lastMovies.get(idx - 1);
+            Integer scheduleNum = extractScheduleNum(selected);
+            if (scheduleNum == null) return "회차 번호 오류";
+
             Map<String, Object> movieCtx = new HashMap<>();
-            movieCtx.put("index", idx);
             movieCtx.put("movieTitle", selected.get("movieTitle"));
             movieCtx.put("screeningDate", selected.get("screeningDate"));
-            movieCtx.put("scheduleId", selected.get("scheduleId"));
-            bookingContext.put("selectedMovie", movieCtx);
+            movieCtx.put("scheduleNum", scheduleNum);
+            s.bookingContext.put("selectedMovie", movieCtx);
 
-            Integer scheduleId = toInt(selected.get("scheduleId"));
-            Map<String, Object> result = intentService.processIntent("movie_booking_step3",
-                    Map.of("scheduleId", scheduleId));
+            Map<String, Object> res = intentService.processIntent("movie_booking_step3", Map.of("scheduleNum", scheduleNum));
+            List<Map<String, Object>> seats = safeList(res.get("seats"));
 
-            List<Map<String, Object>> seats = safeList(result.get("seats"));
-            lastSeats = seats;
-            currentStep = Step.SEAT_SELECT;
-
-            return "선택한 영화: " + selected.get("movieTitle") + "\n"
-                    + "상영일시: " + selected.get("screeningDate") + "\n\n"
-                    + formatSeats(seats)
-                    + "\n좌석번호를 입력해주세요. 예) A1, A2";
+            s.lastSeats = seats;
+            s.step = Step.SEAT_SELECT;
+            return "🎞 선택 영화: " + selected.get("movieTitle") + "\n상영일시: " + selected.get("screeningDate")
+                    + "\n\n" + formatSeats(seats) + "\n좌석번호를 입력해주세요. 예) A1, A2";
         }
 
-        if (currentStep == Step.SEAT_SELECT) {
-            List<String> requestedSeats = parseSeats(userInput);
-            if (requestedSeats.isEmpty()) return "좌석 형식을 다시 입력해주세요. 예) A1, A2";
+        if (s.step == Step.SEAT_SELECT) {
+            List<String> reqSeats = parseSeats(userInput);
+            if (reqSeats.isEmpty()) return "⚠️ 좌석 형식 오류. 예) A1, A2";
 
-            List<Map<String, Object>> selectedSeats = new ArrayList<>();
+            Map<String, Object> movieCtx = safeMap(s.bookingContext.get("selectedMovie"));
+            Integer scheduleNum = toInt(movieCtx.get("scheduleNum"));
+            if (scheduleNum == null) return "회차 정보가 없습니다.";
 
-            for (String token : requestedSeats) {
-                Map<String, Object> seat = lastSeats.stream()
-                        .filter(s -> token.equalsIgnoreCase(String.valueOf(s.get("seat"))))
+            String memberName = userId; // <-- 로그인된 사용자 ID 사용
+
+            for (String t : reqSeats) {
+                Map<String, Object> seat = s.lastSeats.stream()
+                        .filter(x -> t.equalsIgnoreCase(String.valueOf(x.get("seat"))))
                         .findFirst().orElse(null);
 
-                if (seat == null) return token + " 좌석을 찾지 못했습니다.";
-                if (toInt(seat.get("available")) != 1) return token + " 좌석은 예약이 불가합니다.";
+                if (seat == null) return "❌ " + t + " 좌석 없음";
+                if (toInt(seat.get("available")) != 1) return "❌ " + t + " 예약 불가";
 
-                selectedSeats.add(seat);
-            }
+                Integer seatCode = extractSeatCode(seat);
+                if (seatCode == null) return "좌석 코드가 없습니다.";
 
-            Map<String, Object> movieCtx = safeMap(bookingContext.get("selectedMovie"));
-            Integer scheduleId = toInt(movieCtx.get("scheduleId"));
-            String memberName = "user01";
-
-            for (Map<String, Object> seat : selectedSeats) {
+                // 실제 예약 처리 (intent service로 보냄)
                 intentService.processIntent("movie_booking_step4",
-                        Map.of("scheduleId", scheduleId,
-                                "seatCode", seat.get("seat_code"),
-                                "memberName", memberName));
+                        Map.of("scheduleNum", scheduleNum, "seatCode", seatCode, "memberName", memberName));
             }
 
-            resetFlow();
-            return "✅ 좌석 예약이 완료되었습니다!\n10분 내 결제를 진행해주세요.";
+            resetFlow(s);
+            return "✅ 좌석 예약 완료!\n10분 내 결제 진행해주세요.";
         }
 
         return null;
     }
 
-    /* ----------------- 🚲 자전거 즉시 조회 플로우 ----------------- */
-    private String handleBikeIntent(String input) {
-        String lower = input.toLowerCase();
+    /* ------------------- Free Chat (Gemini 호출) ------------------- */
+    private String callGeminiFreeChat(List<Map<String, Object>> history) {
+        Map<String, Object> req = Map.of("contents", history);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        if (lower.contains("자전거") && (lower.contains("대여") || lower.contains("예약"))) {
+        try {
+            ResponseEntity<Map> response =
+                    restTemplate.postForEntity(baseUrl + "?key=" + apiKey, new HttpEntity<>(req, headers), Map.class);
 
-            Map<String, Object> result = intentService.processIntent("bike_list", Map.of());
-            List<Map<String, Object>> bikes = safeList(result.get("bicycles"));
+            List<Map<String, Object>> candidates =
+                    (List<Map<String, Object>>) Objects.requireNonNull(response.getBody()).get("candidates");
+
+            Map<String, Object> cand = candidates.get(0);
+            Map<String, Object> content = (Map<String, Object>) cand.get("content");
+            List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
+            String text = parts.get(0).get("text");
+
+            history.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
+            return text;
+
+        } catch (Exception e) {
+            return "AI 호출 오류: " + e.getMessage();
+        }
+    }
+
+    /* ------------------- 세션 유틸 ------------------- */
+    private void resetFlow(UserSession s) {
+        s.step = Step.IDLE;
+        s.bookingContext.clear();
+        s.lastCinemas.clear();
+        s.lastMovies.clear();
+        s.lastSeats.clear();
+        s.history.clear();
+    }
+
+    public void resetConversation(String userId) {
+        if (userId == null || userId.isBlank()) userId = "guest";
+        userSessions.remove(userId);
+    }
+
+    /* ------------------- 공통 유틸 ------------------- */
+    private boolean isStartBookingIntent(String t) {
+        t = (t == null) ? "" : t.toLowerCase();
+        return (t.contains("영화") && t.contains("예약")) || t.contains("예매");
+    }
+
+    private boolean isCancelIntent(String t) {
+        return t != null && (t.contains("취소") || t.contains("그만") || t.contains("안할래"));
+    }
+
+    private String handleBikeIntent(String t) {
+        if (t == null) return null;
+        String s = t.toLowerCase();
+        if (s.contains("자전거") && (s.contains("대여") || s.contains("예약"))) {
+
+            Map<String, Object> r = intentService.processIntent("bike_list", Map.of());
+            List<Map<String, Object>> bikes = safeList(r.get("bicycles"));
 
             if (bikes.isEmpty()) return "🚲 대여 가능한 자전거가 없습니다.";
 
-            StringBuilder sb = new StringBuilder("[🚲 대여 가능 자전거 목록]\n\n");
+            StringBuilder sb = new StringBuilder("[대여 가능 자전거]\n\n");
             int i = 1;
             for (Map<String, Object> b : bikes) {
                 sb.append(i++).append(". 번호: ").append(b.get("bicycleCode")).append("\n")
                         .append("   종류: ").append(b.get("bicycleType")).append("\n")
-                        .append("   상태: ").append(b.get("status")).append("\n\n");
+                        .append("   상태: ").append(b.get("status")).append("\n")
+                        .append("   위치: ").append(b.get("latitude")).append(", ").append(b.get("longitude")).append("\n\n");
             }
             return sb.toString().trim();
         }
-
         return null;
     }
 
-    /* ----------------- 🔁 공통 함수 ----------------- */
-
-    private boolean isStartBookingIntent(String input) {
-        String lower = input.toLowerCase();
-        return (lower.contains("영화") && lower.contains("예약")) || lower.contains("예매");
-    }
-
-    private boolean isCancelIntent(String input) {
-        return input.contains("취소") || input.contains("그만") || input.contains("안할래");
-    }
-
-    private String formatCinemas(List<Map<String, Object>> list) {
-        StringBuilder sb = new StringBuilder("[노바시네마 지점]\n\n");
+    private String formatCinemas(List<Map<String, Object>> l) {
+        StringBuilder s = new StringBuilder("📍 가까운 영화관 목록\n\n");
         int i = 1;
-        for (Map<String, Object> c : list) {
-            sb.append(i++).append(". ").append(c.get("branch_name")).append("\n");
-        }
-        return sb.toString();
+        for (Map<String, Object> c : l)
+            s.append(i++).append(") ").append(c.get("branch_name")).append(" - ").append(c.get("address")).append("\n");
+        return s.toString();
     }
 
-    private String formatMovies(List<Map<String, Object>> list) {
-        StringBuilder sb = new StringBuilder("[상영 영화 목록]\n\n");
+    private String formatMovies(List<Map<String, Object>> l) {
+        StringBuilder s = new StringBuilder("[상영 영화 목록]\n\n");
         int i = 1;
-        for (Map<String, Object> m : list) {
-            sb.append(i++).append(". ").append(m.get("movieTitle")).append("\n")
-                    .append("   시간: ").append(m.get("screeningDate")).append("\n\n");
-        }
-        return sb.toString();
+        for (Map<String, Object> m : l)
+            s.append(i++).append(". ").append(m.get("movieTitle")).append("\n   시간: ").append(m.get("screeningDate")).append("\n\n");
+        return s.toString();
     }
 
-    private String formatSeats(List<Map<String, Object>> list) {
-        StringBuilder sb = new StringBuilder("[좌석 현황]\n\n");
+    private String formatSeats(List<Map<String, Object>> l) {
+        StringBuilder s = new StringBuilder("[좌석 현황]\n\n");
         int i = 1;
-        for (Map<String, Object> s : list) {
-            sb.append(s.get("seat")).append(" (")
-                    .append(toInt(s.get("available")) == 1 ? "가능" : "예약됨")
+        for (Map<String, Object> x : l) {
+            s.append(x.get("seat")).append(" (")
+                    .append(toInt(x.get("available")) == 1 ? "가능" : "예약됨")
                     .append(")  ");
-            if (i++ % 10 == 0) sb.append("\n");
+            if (i++ % 10 == 0) s.append("\n");
         }
-        return sb.toString();
+        return s.toString();
     }
 
-    private Integer resolveIndexFromInput(String input, int max) {
-        String onlyNum = input.replaceAll("[^0-9]", "");
-        if (onlyNum.isEmpty()) return null;
-        int n = Integer.parseInt(onlyNum);
-        return (n >= 1 && n <= max) ? n : null;
+    private Integer resolveIndexFromInput(String t, int max) {
+        if (t == null) return null;
+        String n = t.replaceAll("[^0-9]", "");
+        if (n.isEmpty()) return null;
+        int v = Integer.parseInt(n);
+        return (v >= 1 && v <= max) ? v : null;
     }
 
-    private List<String> parseSeats(String input) {
-        String[] tokens = input.toUpperCase().split("[^A-Z0-9]+");
+    private List<String> parseSeats(String t) {
+        if (t == null) return new ArrayList<>();
+        String[] tokens = t.toUpperCase().split("[^A-Z0-9]+");
         List<String> out = new ArrayList<>();
-        for (String t : tokens) if (t.matches("[A-Z][0-9]+")) out.add(t);
+        for (String k : tokens) if (k.matches("[A-Z][0-9]+")) out.add(k);
         return out;
     }
 
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> safeList(Object o) {
-        if (o instanceof List) return (List<Map<String, Object>>) o;
-        return new ArrayList<>();
+        return (o instanceof List) ? (List<Map<String, Object>>) o : new ArrayList<>();
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> safeMap(Object o) {
-        if (o instanceof Map) return (Map<String, Object>) o;
-        return new HashMap<>();
+        return (o instanceof Map) ? (Map<String, Object>) o : new HashMap<>();
     }
 
     private Integer toInt(Object v) {
-        try { return Integer.parseInt(String.valueOf(v)); }
-        catch (Exception e) { return null; }
+        try { return Integer.parseInt(String.valueOf(v)); } catch (Exception e) { return null; }
     }
 
-    private void resetFlow() {
-        currentStep = Step.IDLE;
-        bookingContext.clear();
-        lastCinemas.clear();
-        lastMovies.clear();
-        lastSeats.clear();
+    private Integer extractScheduleNum(Map<String, Object> m) {
+        if (m == null) return null;
+        Object v = m.get("scheduleNum");
+        if (v == null) v = m.get("scheduleId");
+        return toInt(v);
     }
 
-    private String callGeminiFreeChat() {
-        Map<String, Object> req = Map.of("contents", conversationHistory);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        String url = baseUrl + "?key=" + apiKey;
-
-        try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, new HttpEntity<>(req, headers), Map.class);
-
-            List<Map<String, Object>> candidates = (List<Map<String, Object>>) Objects.requireNonNull(response.getBody()).get("candidates");
-            Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
-            String text = ((List<Map<String, String>>) content.get("parts")).get(0).get("text");
-
-            conversationHistory.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
-            return text;
-        } catch (Exception e) {
-            return "AI 호출 중 오류: " + e.getMessage();
-        }
-    }
-
-    public void resetConversation() {
-        conversationHistory.clear();
+    private Integer extractSeatCode(Map<String, Object> m) {
+        if (m == null) return null;
+        Object v = m.get("seatCode");
+        if (v == null) v = m.get("seat_code");
+        return toInt(v);
     }
 }
