@@ -120,6 +120,7 @@ public class GeminiService {
             movieCtx.put("movieTitle", selected.get("movieTitle"));
             movieCtx.put("screeningDate", selected.get("screeningDate"));
             movieCtx.put("scheduleNum", scheduleNum);
+            movieCtx.put("screeningNumber", selected.get("screeningNumber"));
             s.bookingContext.put("selectedMovie", movieCtx);
 
             Map<String, Object> res = intentService.processIntent("movie_booking_step3", Map.of("scheduleNum", scheduleNum));
@@ -127,8 +128,17 @@ public class GeminiService {
 
             s.lastSeats = seats;
             s.step = Step.SEAT_SELECT;
-            return "🎞 선택 영화: " + selected.get("movieTitle") + "\n상영일시: " + selected.get("screeningDate")
-                    + "\n\n" + formatSeats(seats) + "\n좌석번호를 입력해주세요. 예) A1, A2";
+            return "🎞 선택 영화: " + selected.get("movieTitle")
+                    + "\n상영일시: " + selected.get("screeningDate")
+                    + "\n<!-- scheduleNum:" + scheduleNum + " -->"
+                    + "\n\n"
+                    + formatSeats(seats)
+                    + "\n\n좌석을 선택하시려면 좌석 번호를 입력해주세요. (예: A1)"
+                    + "\n또는 상세 좌석 보기를 입력하시면 클릭으로 예약을 진행할 수 있습니다."
+                    + "\n\n[상세 좌석 보기]"
+                    + "";
+
+
         }
 
         if (s.step == Step.SEAT_SELECT) {
@@ -139,22 +149,33 @@ public class GeminiService {
             Integer scheduleNum = toInt(movieCtx.get("scheduleNum"));
             if (scheduleNum == null) return "회차 정보가 없습니다.";
 
-            String memberName = userId; // <-- 로그인된 사용자 ID 사용
+            // String memberName = userId;
 
             for (String t : reqSeats) {
                 Map<String, Object> seat = s.lastSeats.stream()
-                        .filter(x -> t.equalsIgnoreCase(String.valueOf(x.get("seat"))))
+                        .filter(x -> {
+                            String seatLabel = x.get("row_label") + String.valueOf(x.get("col_num"));
+                            return t.equalsIgnoreCase(seatLabel);
+                        })
+
                         .findFirst().orElse(null);
 
                 if (seat == null) return "❌ " + t + " 좌석 없음";
-                if (toInt(seat.get("available")) != 1) return "❌ " + t + " 예약 불가";
+
+                // 🛑 수정된 로직: reserved 필드를 사용하여 예약 불가 확인
+                Object reservedObj = seat.get("reserved");
+                boolean isReserved = String.valueOf(reservedObj).equalsIgnoreCase("TRUE") ||
+                        String.valueOf(reservedObj).equals("1");
+
+                if (isReserved) return "❌ " + t + " 예약 불가 (이미 예약됨)";
 
                 Integer seatCode = extractSeatCode(seat);
                 if (seatCode == null) return "좌석 코드가 없습니다.";
 
                 // 실제 예약 처리 (intent service로 보냄)
+                // memberName 파라미터를 제거하고 호출
                 intentService.processIntent("movie_booking_step4",
-                        Map.of("scheduleNum", scheduleNum, "seatCode", seatCode, "memberName", memberName));
+                        Map.of("scheduleNum", scheduleNum, "seatCode", seatCode));
             }
 
             resetFlow(s);
@@ -249,22 +270,75 @@ public class GeminiService {
     private String formatMovies(List<Map<String, Object>> l) {
         StringBuilder s = new StringBuilder("[상영 영화 목록]\n\n");
         int i = 1;
-        for (Map<String, Object> m : l)
-            s.append(i++).append(". ").append(m.get("movieTitle")).append("\n   시간: ").append(m.get("screeningDate")).append("\n\n");
-        return s.toString();
-    }
-
-    private String formatSeats(List<Map<String, Object>> l) {
-        StringBuilder s = new StringBuilder("[좌석 현황]\n\n");
-        int i = 1;
-        for (Map<String, Object> x : l) {
-            s.append(x.get("seat")).append(" (")
-                    .append(toInt(x.get("available")) == 1 ? "가능" : "예약됨")
-                    .append(")  ");
-            if (i++ % 10 == 0) s.append("\n");
+        for (Map<String, Object> m : l) {
+            s.append(i++).append(". ").append(m.get("movieTitle"))
+                    .append("\n   상영관: ").append(m.get("screeningNumber")).append("관")
+                    .append("\n   시간: ").append(m.get("screeningDate"))
+                    .append("\n\n");
         }
         return s.toString();
     }
+
+
+    private String formatSeats(List<Map<String, Object>> seats) {
+
+        if (seats == null || seats.isEmpty()) {
+            return "좌석 정보가 없습니다.";
+        }
+
+        // ✅ 행 기준 그룹화 & 정렬
+        Map<String, List<Map<String, Object>>> rows = new TreeMap<>();
+        for (Map<String, Object> seat : seats) {
+            String row = String.valueOf(seat.get("row_label"));
+            rows.putIfAbsent(row, new ArrayList<>());
+            rows.get(row).add(seat);
+        }
+
+        rows.values().forEach(r ->
+                r.sort(Comparator.comparingInt(s -> {
+                    // 🚨 수정 1: col_num 정렬 시 toInt() 유틸리티 사용 (null 안전성 확보)
+                    Integer colNum = toInt(s.get("col_num"));
+                    return (colNum == null) ? 0 : colNum;
+                }))
+        );
+
+        StringBuilder sb = new StringBuilder();
+
+        for (String row : rows.keySet()) {
+            sb.append(row).append("   ");
+
+            for (Map<String, Object> seat : rows.get(row)) {
+                // 🚨 수정 2: isAisle 파싱 시 toInt() 유틸리티 사용 (null 안전성 확보)
+                Integer isAisleInt = toInt(seat.get("is_aisle"));
+                int isAisle = (isAisleInt == null) ? 0 : isAisleInt;
+
+                if (isAisle == 1) {
+                    sb.append("   "); // ← aisle 빈칸 처리
+                    continue;
+                }
+
+                // 🛑 수정된 로직: reserved 필드 사용
+                Object reservedObj = seat.get("reserved");
+                boolean isReserved = String.valueOf(reservedObj).equalsIgnoreCase("TRUE") ||
+                        String.valueOf(reservedObj).equals("1");
+
+                String mark = isReserved ? "🟥" : "🟩"; // 예약됨(TRUE)이면 🟥, 아니면 🟩
+
+                sb.append(mark).append(" ");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("\n🟩 가능 / 🟥 예약됨");
+        sb.append("\n\n👇 좌석 상세 보려면 \"상세좌석 볼래\" 입력");
+        sb.append("\n좌석 선택 예: A2");
+
+        return sb.toString();
+    }
+
+
+    // ... (이하 유틸리티 메서드 생략)
+    // toInt, resolveIndexFromInput, parseSeats, safeList, safeMap, extractScheduleNum, extractSeatCode 는 변경 없음.
 
     private Integer resolveIndexFromInput(String t, int max) {
         if (t == null) return null;
