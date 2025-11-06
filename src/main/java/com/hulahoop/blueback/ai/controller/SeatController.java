@@ -37,7 +37,7 @@ public class SeatController {
 
         List<Map<String, Object>> seats = (List<Map<String, Object>>) res.get("seats");
 
-        // ✅ 프론트 SeatMap이 요구하는 데이터 구조 그대로 반환
+        // ✅ 프론트 SeatMap이 요구하는 데이터 구조
         List<Map<String, Object>> result = seats.stream().map(seat -> Map.of(
                 "seat_code", seat.get("seat_code"),
                 "row_label", seat.get("row_label"),
@@ -66,14 +66,22 @@ public class SeatController {
             return ResponseEntity.badRequest().body("scheduleNum & seatCode is required");
         }
 
-        String memberName = principal.getName();
-
+        // ✅ IntentService 통해 좌석 HOLD
         intentService.processIntent("movie_booking_step4", Map.of(
                 "scheduleNum", scheduleNum,
-                "seatCode", seatCode,
-                "memberName", memberName
+                "seatCode", seatCode
         ));
 
-        return ResponseEntity.ok("✅ 좌석 예약 성공");
+        // ✅ Gateway(8080)에게 좌석 업데이트 알림 전송 (REST 방식)
+        try {
+            com.hulahoop.blueback.ai.utils.HttpClient.post(
+                    "http://localhost:8080/internal/seat-updated",
+                    Map.of("scheduleNum", scheduleNum)
+            );
+        } catch (Exception e) {
+            System.err.println("⚠️ Gateway 좌석 업데이트 알림 실패: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok("✅ 좌석 예약 성공 (HOLD)");
     }
 }

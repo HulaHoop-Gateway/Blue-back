@@ -1,4 +1,3 @@
-// src/main/java/com/hulahoop/blueback/ai/model/service/GeminiService.java
 package com.hulahoop.blueback.ai.model.service;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +20,8 @@ public class GeminiService {
     private final String baseUrl =
             "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
-    /** 유저별 세션 저장 (스레드 안전) */
+    private final String gatewayNotifyUrl = "http://localhost:8080/internal/seat-updated";
+
     private final Map<String, UserSession> userSessions = new ConcurrentHashMap<>();
 
     private static class UserSession {
@@ -40,59 +40,43 @@ public class GeminiService {
         this.intentService = intentService;
     }
 
-    /**
-     * 유저별 히스토리 적용된 askGemini
-     * @param prompt 유저 입력
-     * @param userId 유저 아이디 (Principal.getName())
-     */
     public synchronized String askGemini(String prompt, String userId) {
         if (userId == null || userId.isBlank()) userId = "guest";
 
         userSessions.putIfAbsent(userId, new UserSession());
         UserSession session = userSessions.get(userId);
 
-        // 대화 히스토리 저장
-        session.history.add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
+        session.history.add(Map.of("role","user","parts", List.of(Map.of("text", prompt))));
 
-        // 취소 처리
         if (isCancelIntent(prompt)) {
             resetFlow(session);
             return "✅ 예약이 취소되었습니다. 다른 도움이 필요하신가요?";
         }
 
-        // 자전거 관련 즉시 응답
         String bikeRes = handleBikeIntent(prompt);
-        if (bikeRes != null) {
-            // 모델 히스토리에 봇 응답도 추가하면 좋음
-            session.history.add(Map.of("role", "model", "parts", List.of(Map.of("text", bikeRes))));
-            return bikeRes;
-        }
+        if (bikeRes != null) return bikeRes;
 
-        // 영화 예약 상태머신 처리 (userId 전달)
         String movieReply = handleMovieFlow(prompt, session, userId);
-        if (movieReply != null) {
-            session.history.add(Map.of("role", "model", "parts", List.of(Map.of("text", movieReply))));
-            return movieReply;
-        }
+        if (movieReply != null) return movieReply;
 
-        // 자유대화: Gemini 호출 (session.history 사용)
-        String aiReply = callGeminiFreeChat(session.history);
-        // 이미 callGeminiFreeChat이 히스토리에 모델 응답을 추가함
-        return aiReply;
+        return callGeminiFreeChat(session.history);
     }
 
-    /* ------------------- 영화 상태 머신 ------------------- */
     private String handleMovieFlow(String userInput, UserSession s, String userId) {
 
+        // 시작
         if (s.step == Step.IDLE && isStartBookingIntent(userInput)) {
             Map<String, Object> res = intentService.processIntent("movie_booking_step1", Map.of());
             List<Map<String, Object>> cinemas = safeList(res.get("cinemas"));
 
             s.lastCinemas = cinemas;
             s.step = Step.BRANCH_SELECT;
-            return formatCinemas(cinemas) + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
+
+            return formatCinemas(cinemas)
+                    + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
 
+        // 지점 선택
         if (s.step == Step.BRANCH_SELECT) {
             Integer idx = resolveIndexFromInput(userInput, s.lastCinemas.size());
             if (idx == null) return "⚠️ 지점 번호를 다시 입력해주세요. 예) 1번";
@@ -105,9 +89,13 @@ public class GeminiService {
 
             s.lastMovies = movies;
             s.step = Step.MOVIE_SELECT;
-            return "🎬 선택한 지점: " + branchName + "\n\n" + formatMovies(movies) + "\n예매할 영화 번호를 입력해주세요. 예) 2번";
+
+            return "🎬 선택한 지점: " + branchName
+                    + "\n\n" + formatMovies(movies)
+                    + "\n예매할 영화 번호를 입력해주세요. 예) 2번";
         }
 
+        // 영화 선택
         if (s.step == Step.MOVIE_SELECT) {
             Integer idx = resolveIndexFromInput(userInput, s.lastMovies.size());
             if (idx == null) return "⚠️ 영화 번호를 다시 입력해주세요. 예) 2번";
@@ -116,76 +104,103 @@ public class GeminiService {
             Integer scheduleNum = extractScheduleNum(selected);
             if (scheduleNum == null) return "회차 번호 오류";
 
-            Map<String, Object> movieCtx = new HashMap<>();
-            movieCtx.put("movieTitle", selected.get("movieTitle"));
-            movieCtx.put("screeningDate", selected.get("screeningDate"));
-            movieCtx.put("scheduleNum", scheduleNum);
-            movieCtx.put("screeningNumber", selected.get("screeningNumber"));
-            s.bookingContext.put("selectedMovie", movieCtx);
+            Map<String, Object> ctx = new HashMap<>();
+            ctx.put("movieTitle", selected.get("movieTitle"));
+            ctx.put("screeningDate", selected.get("screeningDate"));
+            ctx.put("scheduleNum", scheduleNum);
+            ctx.put("screeningNumber", selected.get("screeningNumber"));
+            s.bookingContext.put("selectedMovie", ctx);
 
             Map<String, Object> res = intentService.processIntent("movie_booking_step3", Map.of("scheduleNum", scheduleNum));
-            List<Map<String, Object>> seats = safeList(res.get("seats"));
-
-            s.lastSeats = seats;
+            s.lastSeats = safeList(res.get("seats"));
             s.step = Step.SEAT_SELECT;
+
             return "🎞 선택 영화: " + selected.get("movieTitle")
                     + "\n상영일시: " + selected.get("screeningDate")
-                    + "\n<!-- scheduleNum:" + scheduleNum + " -->"
-                    + "\n\n"
-                    + formatSeats(seats)
-                    + "\n\n좌석을 선택하시려면 좌석 번호를 입력해주세요. (예: A1)"
-                    + "\n또는 상세 좌석 보기를 입력하시면 클릭으로 예약을 진행할 수 있습니다."
-                    + "\n\n[상세 좌석 보기]"
-                    + "";
-
+                    + "\n\n" + formatSeats(s.lastSeats)
+                    + "\n좌석을 입력해주세요 (예: A1)"
+                    + "\n또는 '상세 좌석 보기'를 입력하세요.\n\n[상세 좌석 보기]"
+                    + "\n<!-- scheduleNum:" + scheduleNum + " -->";
 
         }
 
+        // 좌석 선택 단계
         if (s.step == Step.SEAT_SELECT) {
+
+            // ✅ 상세 좌석 보기 명령 — UI만 오픈 (이미 해결하셨다고 하셔서 문구만 유지)
+            if (userInput != null && userInput.contains("상세")) {
+                return "🎬 좌석 선택창을 열게요!";
+            }
+
+            // ✅ 좌석 번호 입력
             List<String> reqSeats = parseSeats(userInput);
-            if (reqSeats.isEmpty()) return "⚠️ 좌석 형식 오류. 예) A1, A2";
+            if (reqSeats.isEmpty()) {
+                return "⚠️ 좌석 형식 오류. 예) A1, A2\n또는 '상세 좌석 보기'";
+            }
+
+            // ✅ 통로 열 집합 동적 계산 (예: 3,4,9,10 등)
+            Set<Integer> aisleCols = computeAisleCols(s.lastSeats);
+
+            // ✅ 먼저: 사용자가 고른 좌석 중 통로 열 포함 여부 사전 차단
+            for (String seatStr : reqSeats) {
+                Integer col = extractColNum(seatStr); // A12 -> 12
+                if (col != null && aisleCols.contains(col)) {
+                    String cols = String.join(",", aisleCols.stream().map(String::valueOf).toList());
+                    return "❌ " + seatStr + "는 통로 열입니다.\n"
+                            + "통로(" + cols + "열)는 예약할 수 없습니다. 다른 좌석을 선택해주세요.";
+                }
+            }
 
             Map<String, Object> movieCtx = safeMap(s.bookingContext.get("selectedMovie"));
             Integer scheduleNum = toInt(movieCtx.get("scheduleNum"));
-            if (scheduleNum == null) return "회차 정보가 없습니다.";
 
-            // String memberName = userId;
-
-            for (String t : reqSeats) {
+            // ✅ 좌석 존재/예약/통로 여부 최종 검증 (이중 방어)
+            for (String seatStr : reqSeats) {
                 Map<String, Object> seat = s.lastSeats.stream()
-                        .filter(x -> {
-                            String seatLabel = x.get("row_label") + String.valueOf(x.get("col_num"));
-                            return t.equalsIgnoreCase(seatLabel);
-                        })
-
+                        .filter(x -> (x.get("row_label") + "" + x.get("col_num")).equalsIgnoreCase(seatStr))
                         .findFirst().orElse(null);
 
-                if (seat == null) return "❌ " + t + " 좌석 없음";
+                if (seat == null) return "❌ " + seatStr + " 좌석 없음";
 
-                // 🛑 수정된 로직: reserved 필드를 사용하여 예약 불가 확인
-                Object reservedObj = seat.get("reserved");
-                boolean isReserved = String.valueOf(reservedObj).equalsIgnoreCase("TRUE") ||
-                        String.valueOf(reservedObj).equals("1");
+                // 통로이면 거절
+                int isAisle = toInt(seat.get("is_aisle")) != null ? toInt(seat.get("is_aisle")) : 0;
+                if (isAisle == 1) {
+                    String cols = String.join(",", aisleCols.stream().map(String::valueOf).toList());
+                    return "❌ " + seatStr + "는 통로입니다. 통로(" + cols + "열)는 예약 불가입니다.";
+                }
 
-                if (isReserved) return "❌ " + t + " 예약 불가 (이미 예약됨)";
+                // 예약 여부
+                boolean reserved = "TRUE".equalsIgnoreCase(String.valueOf(seat.get("reserved")))
+                        || "1".equals(String.valueOf(seat.get("reserved")));
+                if (reserved) return "❌ " + seatStr + " 예약 불가 (이미 예약됨)";
 
+                // 좌석코드 유효성
                 Integer seatCode = extractSeatCode(seat);
-                if (seatCode == null) return "좌석 코드가 없습니다.";
+                if (seatCode == null) return "❌ " + seatStr + " 좌석 코드가 유효하지 않습니다.";
 
-                // 실제 예약 처리 (intent service로 보냄)
-                // memberName 파라미터를 제거하고 호출
+                // 실제 예약 처리
                 intentService.processIntent("movie_booking_step4",
                         Map.of("scheduleNum", scheduleNum, "seatCode", seatCode));
             }
 
             resetFlow(s);
-            return "✅ 좌석 예약 완료!\n10분 내 결제 진행해주세요.";
+            return "✅ 좌석 예약 완료!\n💳 10분 내 결제를 진행해주세요!";
         }
 
         return null;
     }
 
-    /* ------------------- Free Chat (Gemini 호출) ------------------- */
+    public String completeSeatSelection(String userId) {
+        if (userId == null || userId.isBlank()) return null;
+
+        UserSession session = userSessions.get(userId);
+        if (session == null) return null;
+
+        resetFlow(session);
+
+        return "✅ 좌석 선택이 완료되었습니다!\n💳 10분 내 결제해주세요.";
+    }
+
     private String callGeminiFreeChat(List<Map<String, Object>> history) {
         Map<String, Object> req = Map.of("contents", history);
         HttpHeaders headers = new HttpHeaders();
@@ -195,15 +210,12 @@ public class GeminiService {
             ResponseEntity<Map> response =
                     restTemplate.postForEntity(baseUrl + "?key=" + apiKey, new HttpEntity<>(req, headers), Map.class);
 
-            List<Map<String, Object>> candidates =
-                    (List<Map<String, Object>>) Objects.requireNonNull(response.getBody()).get("candidates");
-
-            Map<String, Object> cand = candidates.get(0);
-            Map<String, Object> content = (Map<String, Object>) cand.get("content");
+            List<Map<String, Object>> cand = (List<Map<String, Object>>) response.getBody().get("candidates");
+            Map<String, Object> content = (Map<String, Object>) cand.get(0).get("content");
             List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
-            String text = parts.get(0).get("text");
 
-            history.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
+            String text = parts.get(0).get("text");
+            history.add(Map.of("role","model","parts", List.of(Map.of("text", text))));
             return text;
 
         } catch (Exception e) {
@@ -211,7 +223,6 @@ public class GeminiService {
         }
     }
 
-    /* ------------------- 세션 유틸 ------------------- */
     private void resetFlow(UserSession s) {
         s.step = Step.IDLE;
         s.bookingContext.clear();
@@ -222,13 +233,12 @@ public class GeminiService {
     }
 
     public void resetConversation(String userId) {
-        if (userId == null || userId.isBlank()) userId = "guest";
         userSessions.remove(userId);
     }
 
-    /* ------------------- 공통 유틸 ------------------- */
+    // ───────── Utility Methods ─────────
     private boolean isStartBookingIntent(String t) {
-        t = (t == null) ? "" : t.toLowerCase();
+        t = (t == null ? "" : t.toLowerCase());
         return (t.contains("영화") && t.contains("예약")) || t.contains("예매");
     }
 
@@ -240,7 +250,6 @@ public class GeminiService {
         if (t == null) return null;
         String s = t.toLowerCase();
         if (s.contains("자전거") && (s.contains("대여") || s.contains("예약"))) {
-
             Map<String, Object> r = intentService.processIntent("bike_list", Map.of());
             List<Map<String, Object>> bikes = safeList(r.get("bicycles"));
 
@@ -273,72 +282,61 @@ public class GeminiService {
         for (Map<String, Object> m : l) {
             s.append(i++).append(". ").append(m.get("movieTitle"))
                     .append("\n   상영관: ").append(m.get("screeningNumber")).append("관")
-                    .append("\n   시간: ").append(m.get("screeningDate"))
-                    .append("\n\n");
+                    .append("\n   시간: ").append(m.get("screeningDate")).append("\n\n");
         }
         return s.toString();
     }
 
-
     private String formatSeats(List<Map<String, Object>> seats) {
+        if (seats == null || seats.isEmpty()) return "좌석 정보가 없습니다.";
 
-        if (seats == null || seats.isEmpty()) {
-            return "좌석 정보가 없습니다.";
-        }
-
-        // ✅ 행 기준 그룹화 & 정렬
+        StringBuilder sb = new StringBuilder();
         Map<String, List<Map<String, Object>>> rows = new TreeMap<>();
+        Set<Integer> aisleCols = new TreeSet<>();
+
         for (Map<String, Object> seat : seats) {
             String row = String.valueOf(seat.get("row_label"));
             rows.putIfAbsent(row, new ArrayList<>());
             rows.get(row).add(seat);
+
+            int isAisle = Integer.parseInt(String.valueOf(seat.get("is_aisle")));
+            if (isAisle == 1) {
+                aisleCols.add(Integer.parseInt(String.valueOf(seat.get("col_num"))));
+            }
         }
 
         rows.values().forEach(r ->
-                r.sort(Comparator.comparingInt(s -> {
-                    // 🚨 수정 1: col_num 정렬 시 toInt() 유틸리티 사용 (null 안전성 확보)
-                    Integer colNum = toInt(s.get("col_num"));
-                    return (colNum == null) ? 0 : colNum;
-                }))
+                r.sort(Comparator.comparingInt(s -> Integer.parseInt(String.valueOf(s.get("col_num")))))
         );
 
-        StringBuilder sb = new StringBuilder();
-
         for (String row : rows.keySet()) {
-            sb.append(row).append("   ");
+            sb.append(row).append(" | ");
 
             for (Map<String, Object> seat : rows.get(row)) {
-                // 🚨 수정 2: isAisle 파싱 시 toInt() 유틸리티 사용 (null 안전성 확보)
-                Integer isAisleInt = toInt(seat.get("is_aisle"));
-                int isAisle = (isAisleInt == null) ? 0 : isAisleInt;
+                int isAisle = Integer.parseInt(String.valueOf(seat.get("is_aisle")));
+                boolean reserved =
+                        "TRUE".equalsIgnoreCase(String.valueOf(seat.get("reserved")))
+                                || "1".equals(String.valueOf(seat.get("reserved")));
 
                 if (isAisle == 1) {
-                    sb.append("   "); // ← aisle 빈칸 처리
-                    continue;
+                    sb.append("  ");
+                } else {
+                    sb.append(reserved ? "🟥" : "🟩").append(" ");
                 }
-
-                // 🛑 수정된 로직: reserved 필드 사용
-                Object reservedObj = seat.get("reserved");
-                boolean isReserved = String.valueOf(reservedObj).equalsIgnoreCase("TRUE") ||
-                        String.valueOf(reservedObj).equals("1");
-
-                String mark = isReserved ? "🟥" : "🟩"; // 예약됨(TRUE)이면 🟥, 아니면 🟩
-
-                sb.append(mark).append(" ");
             }
             sb.append("\n");
         }
 
-        sb.append("\n🟩 가능 / 🟥 예약됨");
-        sb.append("\n\n👇 좌석 상세 보려면 \"상세좌석 볼래\" 입력");
-        sb.append("\n좌석 선택 예: A2");
+        sb.append("🟩 가능 / 🟥 예약됨\n");
 
+        if (!aisleCols.isEmpty()) {
+            sb.append("*").append(String.join(",", aisleCols.stream().map(String::valueOf).toList()))
+                    .append("열은 통로입니다.\n");
+        }
+
+        sb.append("좌석 입력 예시: A2\n");
         return sb.toString();
     }
-
-
-    // ... (이하 유틸리티 메서드 생략)
-    // toInt, resolveIndexFromInput, parseSeats, safeList, safeMap, extractScheduleNum, extractSeatCode 는 변경 없음.
 
     private Integer resolveIndexFromInput(String t, int max) {
         if (t == null) return null;
@@ -371,16 +369,41 @@ public class GeminiService {
     }
 
     private Integer extractScheduleNum(Map<String, Object> m) {
-        if (m == null) return null;
         Object v = m.get("scheduleNum");
         if (v == null) v = m.get("scheduleId");
         return toInt(v);
     }
 
     private Integer extractSeatCode(Map<String, Object> m) {
-        if (m == null) return null;
         Object v = m.get("seatCode");
         if (v == null) v = m.get("seat_code");
         return toInt(v);
+    }
+
+    // ===== 추가 유틸 =====
+
+    // 통로 열 집합 생성 (formatSeats 로직과 동일한 기준)
+    private Set<Integer> computeAisleCols(List<Map<String, Object>> seats) {
+        Set<Integer> aisleCols = new TreeSet<>();
+        if (seats == null) return aisleCols;
+        for (Map<String, Object> seat : seats) {
+            Integer isAisle = toInt(seat.get("is_aisle"));
+            Integer col = toInt(seat.get("col_num"));
+            if (isAisle != null && isAisle == 1 && col != null) {
+                aisleCols.add(col);
+            }
+        }
+        return aisleCols;
+    }
+
+    // "A12" -> 12
+    private Integer extractColNum(String seatStr) {
+        if (seatStr == null) return null;
+        try {
+            String num = seatStr.replaceAll("^[A-Z]+", "");
+            return num.isEmpty() ? null : Integer.parseInt(num);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
