@@ -1,37 +1,64 @@
 package com.hulahoop.blueback.ai.model.service;
 
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
 public class IntentService {
 
-    private final RestTemplate restTemplate;
+    private static final Logger log = LoggerFactory.getLogger(IntentService.class);
+    private final WebClient webClient;
 
-    public IntentService(RestTemplateBuilder builder) {
-        this.restTemplate = builder.build();
+    public IntentService(WebClient.Builder webClientBuilder) {
+        this.webClient = webClientBuilder
+                .baseUrl("http://localhost:8080")
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .build();
     }
 
-    //  오직 게이트웨이로만 전달 (게이트웨이가 intent를 분기함)
     public Map<String, Object> processIntent(String intent, Map<String, Object> data) {
-        String gatewayUrl = "http://localhost:8080/api/gateway/dispatch";  // ✅ 게이트웨이 엔드포인트
+        final String gatewayUri = "/api/gateway/dispatch";
+
+        if (intent == null || intent.isBlank()) {
+            return Map.of("error", "X-Intent 값이 비어 있음");
+        }
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("intent", intent);
-        requestBody.put("data", data);
+        requestBody.put("data", data != null ? data : Map.of());
 
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(gatewayUrl, requestBody, Map.class);
-            return response.getBody();
+            Map<String, Object> result = webClient.post()
+                    .uri(gatewayUri)
+                    .header("intent", intent)                          // ✅ 헤더 분기
+                    .bodyValue(requestBody)           // ✅ 래핑 금지! 루트로 전송
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .timeout(Duration.ofSeconds(5))
+                    .onErrorResume(ex -> Mono.just(Map.of(
+                            "error", "게이트웨이 호출 실패: " + ex.getMessage()
+                    )))
+                    .block();
+
+            // 🔎 게이트웨이 응답 로깅
+            log.info("Gateway Response for intent '{}': {}", intent, result);
+            log.info("📤 Sending to gateway: {}", requestBody);
+            log.info("🧪 intent: {}", intent);
+            log.info("🧪 data: {}", data);
+
+
+            return result != null ? result : Map.of("error", "Empty response from gateway");
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Failed to call " + gatewayUrl + ": " + e.getMessage());
-            return error;
+            return Map.of("error", "Failed to call " + gatewayUri + ": " + e.getMessage());
         }
     }
 }
