@@ -66,7 +66,9 @@
         SELECT COUNT(*)
         FROM T_Member
         WHERE id = #{id}
+        AND member_yn = 'Y'
     </select>
+
 
     <!-- ✅ 마지막 회원 코드 조회 -->
     <select id="findLastMemberCode" resultType="string">

@@ -6,9 +6,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/member")
-@CrossOrigin(origins = "http://localhost:5173")
 public class MemberController {
 
     private final MemberService memberService;
@@ -16,8 +17,28 @@ public class MemberController {
     public MemberController(MemberService memberService) {
         this.memberService = memberService;
     }
+    @PostMapping("/signup")
+    public ResponseEntity<?> registerMember(@RequestBody MemberDTO dto) {
+        try {
+            memberService.register(dto);
+            return ResponseEntity.ok("회원가입 성공");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("회원가입 중 오류가 발생했습니다.");
+        }
+    }
 
-    // ✅ 회원정보 조회
+    // ✅ [1] 아이디 중복 확인 (비회원 접근 허용)
+    @GetMapping("/check-id")
+    public ResponseEntity<?> checkId(@RequestParam String id) {
+        boolean available = memberService.isIdAvailable(id);
+        return ResponseEntity.ok(Map.of("available", available));
+    }
+
+
+    // ✅ [2] 회원정보 조회 (로그인 필요)
     @GetMapping("/info")
     public ResponseEntity<?> getMemberInfo(Authentication authentication) {
         if (authentication == null) {
@@ -35,7 +56,7 @@ public class MemberController {
         return ResponseEntity.ok(member);
     }
 
-    // ✅ 회원정보 수정 (PATCH)
+    // ✅ [3] 회원정보 수정
     @PatchMapping("/update")
     public ResponseEntity<?> updateMember(@RequestBody MemberDTO dto, Authentication authentication) {
         if (authentication == null) {
@@ -45,7 +66,6 @@ public class MemberController {
         String id = authentication.getName();
         System.out.println("[MemberController] 회원정보 수정 요청 ID: " + id);
 
-        // 로그인한 사용자 정보 확인
         MemberDTO existing = memberService.getMemberInfoById(id);
         dto.setId(id);
         dto.setMemberCode(existing.getMemberCode());
@@ -58,7 +78,7 @@ public class MemberController {
         }
     }
 
-    // ✅ 회원 탈퇴
+    // ✅ [4] 회원 탈퇴
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteMember(Authentication authentication) {
         if (authentication == null) {
