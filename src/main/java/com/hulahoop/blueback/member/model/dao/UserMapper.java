@@ -7,24 +7,28 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface UserMapper {
 
-    // ✅ id로 회원 정보 조회
+    // ✅ ID로 회원 조회
     MemberDTO findById(@Param("id") String id);
 
     // ✅ 회원 코드로 회원 조회
     MemberDTO findByMemberCode(@Param("memberCode") String memberCode);
 
-    // ✅ 회원 등록 (회원가입)
+    // ✅ 회원 등록
     int insertMember(MemberDTO member);
 
     // ✅ 회원 정보 수정
     int updateMember(MemberDTO member);
 
-    // ✅ 회원 삭제
-    int deleteMember(@Param("memberCode") String memberCode);
+    // ✅ SNS 알림 설정 변경
+    int updateNotification(@Param("memberCode") String memberCode,
+                           @Param("status") String status);
 
-    // ✅ 아이디 중복 확인 (회원가입용)
+    // ✅ 회원 탈퇴 (삭제 X → 플래그 변경)
+    int withdrawMember(@Param("memberCode") String memberCode);
+
+    // ✅ 아이디 중복 확인
     int countById(@Param("id") String id);
 
-    // ✅ 마지막 회원코드 조회 (회원가입용)
+    // ✅ 마지막 회원 코드 조회
     String findLastMemberCode();
 }

@@ -8,7 +8,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
 import java.io.IOException;
 
 @Component
@@ -27,36 +26,50 @@ public class JwtFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        System.out.println("[JwtFilter] 요청 URI: " + path);
+        String method = request.getMethod();
 
-        // 로그인/회원가입은 JWT 검증 제외
-        if (path.equals("/api/login") || path.equals("/api/signup")) {
-            System.out.println("[JwtFilter] 로그인/회원가입 요청, 필터 통과");
+        // ✅ 1. CORS Preflight(OPTIONS) 요청은 바로 통과
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            response.setStatus(HttpServletResponse.SC_OK);
             filterChain.doFilter(request, response);
             return;
         }
 
+        // ✅ 2. 로그인 / 회원가입 / 아이디중복확인은 토큰 검증 제외
+        if (path.equals("/api/login")
+                || path.equals("/api/member/signup")
+                || path.equals("/api/member/check-id")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // ✅ 3. Authorization 헤더 검증
         String authHeader = request.getHeader("Authorization");
-        System.out.println("[JwtFilter] Authorization 헤더: " + authHeader);
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            System.out.println("[JwtFilter] 추출한 토큰: " + token);
 
             if (jwtUtil.validateToken(token)) {
                 String username = jwtUtil.extractUsername(token);
-                System.out.println("[JwtFilter] 토큰 유효, 사용자: " + username);
+                System.out.println("[JwtFilter] 유효한 토큰 - 사용자: " + username);
 
-                UsernamePasswordAuthenticationToken auth =
+                UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(username, null, null);
-                SecurityContextHolder.getContext().setAuthentication(auth);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
             } else {
-                System.out.println("[JwtFilter] 토큰 유효하지 않음");
+                System.out.println("[JwtFilter] ❌ 토큰이 유효하지 않음");
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.getWriter().write("Invalid Token");
+                return;
             }
         } else {
-            System.out.println("[JwtFilter] Authorization 헤더 없음 또는 Bearer 미포함");
+            System.out.println("[JwtFilter] ❌ Authorization 헤더 없음");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().write("Missing or Invalid Authorization Header");
+            return;
         }
 
+        // ✅ 4. 체인 계속 진행
         filterChain.doFilter(request, response);
     }
 }
