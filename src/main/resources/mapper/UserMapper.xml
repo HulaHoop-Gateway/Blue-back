@@ -5,29 +5,70 @@
 
 <mapper namespace="com.hulahoop.blueback.member.model.dao.UserMapper">
 
-    <!-- id로 회원 조회 -->
+    <!-- ✅ ID로 회원 조회 -->
     <select id="findById" parameterType="string" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT *
         FROM T_Member
         WHERE id = #{id}
+        AND member_yn = 'Y'
     </select>
 
-    <!-- 회원 등록 -->
+    <!-- ✅ 회원 코드로 회원 조회 -->
+    <select id="findByMemberCode" parameterType="string" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
+        SELECT *
+        FROM T_Member
+        WHERE member_code = #{memberCode}
+        AND member_yn = 'Y'
+    </select>
+
+    <!-- ✅ 회원 등록 -->
     <insert id="insertMember" parameterType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         INSERT INTO T_Member (
-        member_code, name, id, password, phone_num, email, address, user_type, notification_status
+        member_code, name, id, password,
+        phone_num, email, address,
+        user_type, notification_status, member_yn
         ) VALUES (
-        #{memberCode}, #{name}, #{id}, #{password}, #{phoneNum},
-        #{email}, #{address}, #{userType}, #{notificationStatus}
+        #{memberCode}, #{name}, #{id}, #{password},
+        #{phoneNum}, #{email}, #{address},
+        #{userType}, #{notificationStatus}, 'Y'
         )
     </insert>
 
-    <!-- 아이디 중복 확인 -->
+    <!-- ✅ 회원 정보 수정 -->
+    <update id="updateMember" parameterType="com.hulahoop.blueback.member.model.dto.MemberDTO">
+        UPDATE T_Member
+        SET
+        phone_num = #{phoneNum},
+        email = #{email},
+        address = #{address},
+        notification_status = #{notificationStatus}
+        WHERE member_code = #{memberCode}
+        AND member_yn = 'Y'
+    </update>
+
+    <!-- ✅ SNS 알림 설정 변경 -->
+    <update id="updateNotification">
+        UPDATE T_Member
+        SET notification_status = #{status}
+        WHERE member_code = #{memberCode}
+        AND member_yn = 'Y'
+    </update>
+
+    <!-- ✅ 회원 탈퇴 (삭제 X → 비활성 플래그 변경) -->
+    <update id="withdrawMember">
+        UPDATE T_Member
+        SET member_yn = 'N'
+        WHERE member_code = #{memberCode}
+    </update>
+
+    <!-- ✅ 아이디 중복 확인 -->
     <select id="countById" parameterType="string" resultType="int">
-        SELECT COUNT(*) FROM T_Member WHERE id = #{id}
+        SELECT COUNT(*)
+        FROM T_Member
+        WHERE id = #{id}
     </select>
 
-    <!-- 마지막 회원 코드 조회 -->
+    <!-- ✅ 마지막 회원 코드 조회 -->
     <select id="findLastMemberCode" resultType="string">
         SELECT member_code
         FROM T_Member

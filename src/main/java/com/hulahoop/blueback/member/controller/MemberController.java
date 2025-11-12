@@ -3,12 +3,11 @@ package com.hulahoop.blueback.member.controller;
 import com.hulahoop.blueback.member.model.dto.MemberDTO;
 import com.hulahoop.blueback.member.model.service.MemberService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
-
 @RestController
-@RequestMapping("/api/member") // ✅ /api/member 로 변경
+@RequestMapping("/api/member")
 @CrossOrigin(origins = "http://localhost:5173")
 public class MemberController {
 
@@ -18,28 +17,62 @@ public class MemberController {
         this.memberService = memberService;
     }
 
-    // ✅ 아이디 중복확인
-    @GetMapping("/check-id")
-    public ResponseEntity<?> checkId(@RequestParam("id") String id) {
-        System.out.println("🟦 [MemberController] /api/member/check-id 호출됨, id = " + id);
+    // ✅ 회원정보 조회
+    @GetMapping("/info")
+    public ResponseEntity<?> getMemberInfo(Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
+        }
 
-        boolean available = memberService.isIdAvailable(id);
+        String id = authentication.getName();
+        System.out.println("[MemberController] 인증된 사용자 ID: " + id);
 
-        System.out.println("🟩 [MemberController] 사용 가능 여부 = " + available);
+        MemberDTO member = memberService.getMemberInfoById(id);
+        if (member == null) {
+            return ResponseEntity.status(404).body("회원 정보를 찾을 수 없습니다.");
+        }
 
-        return ResponseEntity.ok(Map.of("available", available));
+        return ResponseEntity.ok(member);
     }
 
-    // ✅ 회원가입
-    @PostMapping("/signup")
-    public ResponseEntity<?> signup(@RequestBody MemberDTO member) {
-        System.out.println("🟦 [MemberController] /api/member/signup 호출됨");
-        System.out.println("➡️ 전달된 회원 데이터: " + member);
+    // ✅ 회원정보 수정 (PATCH)
+    @PatchMapping("/update")
+    public ResponseEntity<?> updateMember(@RequestBody MemberDTO dto, Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
+        }
 
-        memberService.register(member);
+        String id = authentication.getName();
+        System.out.println("[MemberController] 회원정보 수정 요청 ID: " + id);
 
-        System.out.println("🟩 [MemberController] 회원가입 완료: " + member.getId());
+        // 로그인한 사용자 정보 확인
+        MemberDTO existing = memberService.getMemberInfoById(id);
+        dto.setId(id);
+        dto.setMemberCode(existing.getMemberCode());
 
-        return ResponseEntity.ok(Map.of("message", "회원가입이 완료되었습니다."));
+        try {
+            memberService.updateMember(dto);
+            return ResponseEntity.ok("회원정보 수정 완료");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("회원정보 수정 실패: " + e.getMessage());
+        }
+    }
+
+    // ✅ 회원 탈퇴
+    @DeleteMapping("/delete")
+    public ResponseEntity<?> deleteMember(Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
+        }
+
+        String id = authentication.getName();
+        MemberDTO existing = memberService.getMemberInfoById(id);
+
+        try {
+            memberService.withdrawMember(existing.getMemberCode());
+            return ResponseEntity.ok("회원 탈퇴 완료");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("회원 탈퇴 실패: " + e.getMessage());
+        }
     }
 }
