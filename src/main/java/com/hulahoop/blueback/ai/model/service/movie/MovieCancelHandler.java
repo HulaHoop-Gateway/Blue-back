@@ -13,7 +13,6 @@ public class MovieCancelHandler {
     private final IntentService intentService;
     private final UserMapper userMapper;
 
-    // 사용자별 진행 상태 저장
     private final Map<String, String> userState = new HashMap<>();
     private final Map<String, String> selectedReservation = new HashMap<>();
 
@@ -26,25 +25,21 @@ public class MovieCancelHandler {
         MemberDTO member = userMapper.findById(userId);
         if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
 
-        // ✅ 전화번호 기반 식별
         String phoneNumber = member.getPhoneNum();
         if (phoneNumber == null || phoneNumber.isBlank()) {
             return "⚠️ 회원 정보에 전화번호가 등록되어 있지 않습니다. 고객센터에 문의해주세요.";
         }
 
         String currentState = userState.getOrDefault(userId, "idle");
-
         Map<String, Object> data = new HashMap<>();
-        data.put("phoneNumber", phoneNumber); // ✅ 핵심 변경!
+        data.put("phoneNumber", phoneNumber);
 
-        // 1️⃣ 예매 취소 시작
         if (userInput.matches("(?i)^예매 취소.*|^2번$")) {
             userState.put(userId, "awaiting_reservation_num");
             Map<String, Object> res = intentService.processIntent("movie_cancel_step1", data);
             return buildResponse(res, "📋 취소 가능한 예매 내역입니다:\n\n", true);
         }
 
-        // 2️⃣ 예매 번호 입력
         if (currentState.equals("awaiting_reservation_num") && userInput.matches("^\\d{10}$")) {
             userState.put(userId, "awaiting_confirmation");
             selectedReservation.put(userId, userInput);
@@ -53,21 +48,17 @@ public class MovieCancelHandler {
             return res.getOrDefault("message", "❌ 예매 정보를 찾을 수 없습니다.").toString();
         }
 
-        // 3️⃣ "아니오" 또는 "취소" 응답 → 예매 취소 중단
         if (currentState.equals("awaiting_confirmation") &&
                 List.of("아니오", "취소", "안할래", "그만", "아니", "안돼").stream()
                         .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
-
             userState.remove(userId);
             selectedReservation.remove(userId);
             return "🚫 예매 취소가 취소되었습니다. 다른 작업을 원하시면 메뉴를 선택해주세요.";
         }
 
-        // 4️⃣ 긍정 응답 → 실제 취소 처리
         if (currentState.equals("awaiting_confirmation") &&
                 List.of("네", "예", "응", "그래", "좋아", "ㅇㅇ", "오케이").stream()
                         .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
-
             String reservationNum = selectedReservation.get(userId);
             data.put("reservationNum", reservationNum);
             userState.remove(userId);
@@ -76,7 +67,6 @@ public class MovieCancelHandler {
             return res.getOrDefault("message", "⚠️ 예매 취소 처리 중 오류가 발생했습니다.").toString();
         }
 
-        // 기본 안내
         return "❓ 잘못된 입력입니다. '예매 취소'라고 입력하시면 취소 가능한 내역을 보여드릴게요.";
     }
 
