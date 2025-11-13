@@ -26,11 +26,16 @@ public class MovieCancelHandler {
         MemberDTO member = userMapper.findById(userId);
         if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
 
-        String memberCode = member.getMemberCode();
+        // ✅ 전화번호 기반 식별
+        String phoneNumber = member.getPhoneNum();
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            return "⚠️ 회원 정보에 전화번호가 등록되어 있지 않습니다. 고객센터에 문의해주세요.";
+        }
+
         String currentState = userState.getOrDefault(userId, "idle");
 
         Map<String, Object> data = new HashMap<>();
-        data.put("memberCode", memberCode);
+        data.put("phoneNumber", phoneNumber); // ✅ 핵심 변경!
 
         // 1️⃣ 예매 취소 시작
         if (userInput.matches("(?i)^예매 취소.*|^2번$")) {
