@@ -81,12 +81,23 @@ public class MovieBookingFlowHandler {
 
             return "🎟️ 선택한 영화: " + movieTitle + "\n\n"
                     + formatter.formatSeats(seats)
-                    + "\n원하시는 좌석을 입력해주세요. 예) A3";
+                    + "\n원하시는 좌석을 입력해주세요. 예) A3"
+                    + "\n\n<!-- scheduleNum:" + scheduleNum + " -->";
         }
 
         if (s.getStep() == UserSession.Step.SEAT_SELECT) {
             String seatInput = userInput.trim().toUpperCase();
             String scheduleNum = String.valueOf(s.getBookingContext().get("scheduleNum"));
+
+            // ✅ 상세 좌석 보기 (모달 트리거)
+            if (
+                    seatInput.contains("상세") ||
+                            seatInput.contains("좌석 보여") ||
+                            seatInput.contains("좌석 볼래") ||
+                            seatInput.contains("좌석 보기")
+            ) {
+                return "🎬 좌석 선택창을 열게요!\n\n<!-- scheduleNum:" + scheduleNum + " -->";
+            }
 
             MemberDTO member = userMapper.findById(userId);
             if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
@@ -105,7 +116,7 @@ public class MovieBookingFlowHandler {
                     Map.of(
                             "scheduleNum", scheduleNum,
                             "seatCode", seatCode,
-                            "memberCode", memberCode
+                            "phoneNumber", member.getPhoneNum()
                     )
             );
 
@@ -122,6 +133,7 @@ public class MovieBookingFlowHandler {
                 return "❌ 예매 실패: " + res.getOrDefault("error", "알 수 없는 오류");
             }
         }
+
 
         return null;
     }
