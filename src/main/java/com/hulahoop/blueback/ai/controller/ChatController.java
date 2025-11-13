@@ -18,12 +18,12 @@ public class ChatController {
 
     /**
      * 좌석 선택 완료 → 세션 초기화 및 안내 메시지 반환
-     */
-    @PostMapping("/complete-seat")
-    public ResponseEntity<String> completeSeat(Principal principal) {
-        String userId = (principal != null) ? principal.getName() : "guest";
-        String message = geminiService.completeSeatSelection(userId);
-        return ResponseEntity.ok(message != null ? message : "처리 중 오류가 발생했습니다.");
-    }
+//     */
+//    @PostMapping("/complete-seat")
+//    public ResponseEntity<String> completeSeat(Principal principal) {
+//        String userId = (principal != null) ? principal.getName() : "guest";
+////        String message = geminiService.completeSeatSelection(userId);
+//        return ResponseEntity.ok(message != null ? message : "처리 중 오류가 발생했습니다.");
+//    }
 
 }

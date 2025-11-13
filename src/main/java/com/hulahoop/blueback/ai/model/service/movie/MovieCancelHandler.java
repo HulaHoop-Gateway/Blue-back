@@ -1,0 +1,97 @@
+package com.hulahoop.blueback.ai.model.service.movie;
+
+import com.hulahoop.blueback.ai.model.service.IntentService;
+import com.hulahoop.blueback.member.model.dao.UserMapper;
+import com.hulahoop.blueback.member.model.dto.MemberDTO;
+import org.springframework.stereotype.Service;
+
+import java.util.*;
+
+@Service
+public class MovieCancelHandler {
+
+    private final IntentService intentService;
+    private final UserMapper userMapper;
+
+    // 사용자별 진행 상태 저장
+    private final Map<String, String> userState = new HashMap<>();
+    private final Map<String, String> selectedReservation = new HashMap<>();
+
+    public MovieCancelHandler(IntentService intentService, UserMapper userMapper) {
+        this.intentService = intentService;
+        this.userMapper = userMapper;
+    }
+
+    public String handle(String userInput, String userId) {
+        MemberDTO member = userMapper.findById(userId);
+        if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
+
+        String memberCode = member.getMemberCode();
+        String currentState = userState.getOrDefault(userId, "idle");
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("memberCode", memberCode);
+
+        // 1️⃣ 예매 취소 시작
+        if (userInput.matches("(?i)^예매 취소.*|^2번$")) {
+            userState.put(userId, "awaiting_reservation_num");
+            Map<String, Object> res = intentService.processIntent("movie_cancel_step1", data);
+            return buildResponse(res, "📋 취소 가능한 예매 내역입니다:\n\n", true);
+        }
+
+        // 2️⃣ 예매 번호 입력
+        if (currentState.equals("awaiting_reservation_num") && userInput.matches("^\\d{10}$")) {
+            userState.put(userId, "awaiting_confirmation");
+            selectedReservation.put(userId, userInput);
+            data.put("reservationNum", userInput);
+            Map<String, Object> res = intentService.processIntent("movie_cancel_step2", data);
+            return res.getOrDefault("message", "❌ 예매 정보를 찾을 수 없습니다.").toString();
+        }
+
+        // 3️⃣ "아니오" 또는 "취소" 응답 → 예매 취소 중단
+        if (currentState.equals("awaiting_confirmation") &&
+                List.of("아니오", "취소", "안할래", "그만", "아니", "안돼").stream()
+                        .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
+
+            userState.remove(userId);
+            selectedReservation.remove(userId);
+            return "🚫 예매 취소가 취소되었습니다. 다른 작업을 원하시면 메뉴를 선택해주세요.";
+        }
+
+        // 4️⃣ 긍정 응답 → 실제 취소 처리
+        if (currentState.equals("awaiting_confirmation") &&
+                List.of("네", "예", "응", "그래", "좋아", "ㅇㅇ", "오케이").stream()
+                        .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
+
+            String reservationNum = selectedReservation.get(userId);
+            data.put("reservationNum", reservationNum);
+            userState.remove(userId);
+            selectedReservation.remove(userId);
+            Map<String, Object> res = intentService.processIntent("movie_cancel_step3", data);
+            return res.getOrDefault("message", "⚠️ 예매 취소 처리 중 오류가 발생했습니다.").toString();
+        }
+
+        // 기본 안내
+        return "❓ 잘못된 입력입니다. '예매 취소'라고 입력하시면 취소 가능한 내역을 보여드릴게요.";
+    }
+
+    private String buildResponse(Map<String, Object> res, String header, boolean showPrompt) {
+        if (res.containsKey("message")) return res.get("message").toString();
+
+        List<Map<String, Object>> reservations = (List<Map<String, Object>>) res.get("reservations");
+        if (reservations == null || reservations.isEmpty()) return "📭 취소 가능한 예매 내역이 없습니다.";
+
+        StringBuilder sb = new StringBuilder(header);
+        for (Map<String, Object> r : reservations) {
+            sb.append("🎟️ ")
+                    .append(r.get("movieTitle")).append(" / ")
+                    .append(r.get("screeningDate")).append(" / ")
+                    .append(r.get("branchName")).append(" / ")
+                    .append("좌석 ").append(r.get("seat")).append(" / ")
+                    .append("번호: ").append(r.get("reservationNum")).append("\n");
+        }
+
+        if (showPrompt) sb.append("\n💡 취소하실 예매 번호를 입력해주세요 (예: 2511130003)");
+        return sb.toString();
+    }
+}
