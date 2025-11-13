@@ -18,6 +18,7 @@ public class IntentService {
     private static final Logger log = LoggerFactory.getLogger(IntentService.class);
     private final WebClient webClient;
 
+
     public IntentService(WebClient.Builder webClientBuilder) {
         this.webClient = webClientBuilder
                 .baseUrl("http://localhost:8080")

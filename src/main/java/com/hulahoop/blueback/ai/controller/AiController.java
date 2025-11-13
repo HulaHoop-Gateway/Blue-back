@@ -47,7 +47,6 @@ public class AiController {
     @PostMapping("/complete-seat")
     public ResponseEntity<Map<String, String>> completeSeat(Principal principal) {
         String userId = (principal != null) ? principal.getName() : "guest";
-        String result = geminiService.completeSeatSelection(userId);
-        return ResponseEntity.ok(Map.of("message", result));
+        return ResponseEntity.ok(Map.of("message", "test"));
     }
 }
