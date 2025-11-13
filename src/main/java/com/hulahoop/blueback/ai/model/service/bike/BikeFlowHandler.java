@@ -1,5 +1,6 @@
 package com.hulahoop.blueback.ai.model.service.bike;
 
+import com.hulahoop.blueback.ai.model.dto.BikeDTO;
 import com.hulahoop.blueback.ai.model.service.IntentService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
 import org.springframework.stereotype.Service;
@@ -17,24 +18,27 @@ public class BikeFlowHandler {
         this.intentService = intentService;
     }
 
-    public String handleBikeFlow(String userInput, UserSession session) {
+    public List<BikeDTO> handleBikeFlow(String userInput, UserSession session) {
         if (session.getStep() == UserSession.Step.IDLE && userInput.contains("자전거")) {
             Map<String, Object> r = intentService.processIntent("bike_list", Map.of());
             List<Map<String, Object>> bikes = safeList(r.get("bicycles"));
 
-            if (bikes.isEmpty()) return "🚲 대여 가능한 자전거가 없습니다.";
-
-            StringBuilder sb = new StringBuilder("[대여 가능 자전거]\n\n");
-            int i = 1;
-            for (Map<String, Object> b : bikes) {
-                sb.append(i++).append(". 번호: ").append(b.get("bicycleCode"))
-                        .append(" | 종류: ").append(b.get("bicycleType"))
-                        .append(" | 상태: ").append(b.get("status"))
-                        .append(" | 위치: ").append(b.get("latitude")).append(", ").append(b.get("longitude")).append("\n");
+            if (bikes.isEmpty()) {
+                return new ArrayList<>(); // Return empty list if no bikes
             }
-            return sb.toString();
+
+            List<BikeDTO> bikeDTOs = new ArrayList<>();
+            for (Map<String, Object> b : bikes) {
+                String bicycleCode = String.valueOf(b.get("bicycleCode"));
+                String bicycleType = (String) b.get("bicycleType");
+                String status = (String) b.get("status");
+                double latitude = ((Number) b.get("latitude")).doubleValue();
+                double longitude = ((Number) b.get("longitude")).doubleValue();
+                bikeDTOs.add(new BikeDTO(bicycleCode, bicycleType, status, latitude, longitude));
+            }
+            return bikeDTOs;
         }
-        return null;
+        return null; // Or throw an exception, depending on desired behavior for non-bike input
     }
 
     @SuppressWarnings("unchecked")

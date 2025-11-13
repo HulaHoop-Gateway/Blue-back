@@ -1,19 +1,39 @@
 package com.hulahoop.blueback.ai.model.dto;
 
+import java.util.List;
+
 public class AiResponseDTO {
-    private String result; // Gemini 응답 요약 결과
+    private String message; // 일반 응답 메시지
+    private List<BikeDTO> bicycles; // 자전거 목록
 
     public AiResponseDTO() {}
 
-    public AiResponseDTO(String result) {
-        this.result = result;
+    public AiResponseDTO(String message) {
+        this.message = message;
     }
 
-    public String getResult() {
-        return result;
+    public AiResponseDTO(List<BikeDTO> bicycles) {
+        this.bicycles = bicycles;
     }
 
-    public void setResult(String result) {
-        this.result = result;
+    public AiResponseDTO(String message, List<BikeDTO> bicycles) {
+        this.message = message;
+        this.bicycles = bicycles;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public List<BikeDTO> getBicycles() {
+        return bicycles;
+    }
+
+    public void setBicycles(List<BikeDTO> bicycles) {
+        this.bicycles = bicycles;
     }
 }
