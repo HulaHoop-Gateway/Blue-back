@@ -1,5 +1,7 @@
 package com.hulahoop.blueback.ai.model.service;
 
+import com.hulahoop.blueback.ai.model.dto.AiResponseDTO;
+import com.hulahoop.blueback.ai.model.dto.BikeDTO;
 import com.hulahoop.blueback.ai.model.service.bike.BikeFlowHandler;
 import com.hulahoop.blueback.ai.model.service.movie.MovieFlowRouter;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
@@ -9,15 +11,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class GeminiService {
 
-    private final RestTemplate restTemplate;
-    private final IntentService intentService;
+    private final RestTemplate restTemplate = new RestTemplate();
     private final MovieFlowRouter movieFlowRouter;
     private final BikeFlowHandler bikeFlowHandler;
+
+    private final Map<String, UserSession> userSessions = new HashMap<>();
 
     @Value("${gemini.api.key}")
     private String apiKey;
@@ -25,23 +27,17 @@ public class GeminiService {
     private final String baseUrl =
             "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
-    private final Map<String, UserSession> userSessions = new ConcurrentHashMap<>();
-
-    public GeminiService(
-            RestTemplate restTemplate,
-            IntentService intentService,
-            MovieFlowRouter movieFlowRouter,
-            BikeFlowHandler bikeFlowHandler
-    ) {
-        this.restTemplate = restTemplate;
-        this.intentService = intentService;
+    public GeminiService(MovieFlowRouter movieFlowRouter, BikeFlowHandler bikeFlowHandler) {
         this.movieFlowRouter = movieFlowRouter;
         this.bikeFlowHandler = bikeFlowHandler;
     }
 
-    public synchronized String askGemini(String prompt, String userId) {
+    /**
+     * 사용자 입력을 받아 적절한 흐름으로 전달하는 핵심 메서드
+     */
+    public synchronized AiResponseDTO askGemini(String prompt, String userId) {
         if (userId == null || userId.isBlank()) {
-            return "❌ 유효하지 않은 사용자입니다. 다시 로그인해주세요.";
+            return new AiResponseDTO("❌ 유효하지 않은 사용자입니다. 다시 로그인해주세요.");
         }
 
         userSessions.putIfAbsent(userId, new UserSession());
@@ -49,97 +45,111 @@ public class GeminiService {
 
         session.getHistory().add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
 
-        String digitsOnly = prompt.replaceAll("[^0-9]", "");
-        if (digitsOnly.length() == 10) {
-            Map<String, Object> res = intentService.processIntent("movie_cancel_step2", Map.of("reservationNum", digitsOnly));
-            if (res.containsKey("message")) {
-                return res.get("message").toString();
-            } else {
-                return "❌ 예매 정보를 확인할 수 없습니다.";
-            }
+        // ✅ 이미 특정 플로우(영화 예매, 자전거 등) 진행 중이라면 해당 핸들러로만 진행
+        if (session.getStep() != UserSession.Step.IDLE) {
+            System.out.println("🔄 현재 플로우 진행 중: " + session.getStep());
+            String movieResponse = movieFlowRouter.handle(prompt, session, userId);
+            return new AiResponseDTO(movieResponse); // Assuming movieFlowRouter.handle still returns String
         }
 
-        // ✅ 긍정 응답 → 예매 취소 처리
-        List<String> positiveResponses = List.of("네", "예", "응", "그래", "좋아", "ㅇㅇ", "오케이");
-        if (positiveResponses.stream().anyMatch(p -> p.equalsIgnoreCase(prompt.trim()))) {
-            String lastReservationNum = extractLastReservationNum(session);
-            if (lastReservationNum != null) {
-                Map<String, Object> res = intentService.processIntent("movie_cancel_step3", Map.of("reservationNum", lastReservationNum));
-                return res.getOrDefault("message", "⚠️ 예매 취소 처리 중 오류가 발생했습니다.").toString();
-            } else {
-                return "❌ 취소할 예매 번호를 찾을 수 없습니다. 먼저 예매 번호를 입력해주세요.";
-            }
-        }
-
-        // ✅ 부정 응답 → 예매 취소 중단
-        List<String> negativeResponses = List.of("아니오", "취소", "안할래", "그만", "아니", "안돼");
-        if (negativeResponses.stream().anyMatch(p -> p.equalsIgnoreCase(prompt.trim()))) {
-            session.reset();
-            return "🚫 예매 취소가 중단되었습니다. 다른 작업을 원하시면 말씀해주세요.";
-        }
-
-        // 🚫 취소 명령 처리
+        // 🚫 대화 종료 요청
         if (isCancelIntent(prompt)) {
             session.reset();
-            return "✅ 예약이 취소되었습니다. 다른 도움이 필요하신가요?";
+            return new AiResponseDTO("✅ 대화를 종료했습니다. 다른 도움이 필요하시면 말씀해주세요.");
         }
 
-        // 🚲 자전거 흐름
-        String bikeRes = bikeFlowHandler.handleBikeFlow(prompt, session);
-        if (bikeRes != null) return bikeRes;
+        // 🚲 자전거 관련 플로우 감지
+        if (containsAny(prompt, List.of("자전거", "대여", "반납", "따릉이"))) {
+            List<BikeDTO> bikeDTOs = bikeFlowHandler.handleBikeFlow(prompt, session);
+            if (bikeDTOs != null && !bikeDTOs.isEmpty()) {
+                return new AiResponseDTO(null, bikeDTOs); // Return bikes, no message
+            } else if (bikeDTOs != null && bikeDTOs.isEmpty()) {
+                return new AiResponseDTO("🚲 대여 가능한 자전거가 없습니다.");
+            }
+        }
 
-        // 🎬 영화 흐름
-        String movieReply = movieFlowRouter.handle(prompt, session, userId);
-        if (movieReply != null) return movieReply;
+        // 🎬 영화 관련 플로우 감지
+        if (containsAny(prompt, List.of("영화", "예매", "예약", "상영", "시간표", "취소"))) {
+            String movieResponse = movieFlowRouter.handle(prompt, session, userId);
+            if (movieResponse != null && !movieResponse.isBlank()) return new AiResponseDTO(movieResponse);
+        }
 
-        // ✨ 일반 대화
+        // 💬 자유 대화 (플로우 외 상태에서만 실행)
         return callGeminiFreeChat(session.getHistory());
     }
 
-    private String callGeminiFreeChat(List<Map<String, Object>> history) {
+    /**
+     * Gemini 모델 호출 (자동 재시도 포함)
+     */
+    private AiResponseDTO callGeminiFreeChat(List<Map<String, Object>> history) {
         Map<String, Object> req = Map.of("contents", history);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        try {
-            ResponseEntity<Map> response =
-                    restTemplate.postForEntity(baseUrl + "?key=" + apiKey, new HttpEntity<>(req, headers), Map.class);
+        int maxRetries = 3;
+        int attempt = 0;
 
-            List<Map<String, Object>> cand = (List<Map<String, Object>>) response.getBody().get("candidates");
-            Map<String, Object> content = (Map<String, Object>) cand.get(0).get("content");
-            List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
-            String text = parts.get(0).get("text");
+        while (attempt < maxRetries) {
+            attempt++;
+            try {
+                ResponseEntity<Map> response = restTemplate.postForEntity(
+                        baseUrl + "?key=" + apiKey,
+                        new HttpEntity<>(req, headers),
+                        Map.class
+                );
 
-            history.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
-            return text;
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    Map<String, Object> body = response.getBody();
+                    if (body == null || !body.containsKey("candidates"))
+                        throw new RuntimeException("빈 응답을 받았습니다.");
 
-        } catch (Exception e) {
-            return "AI 호출 오류: " + e.getMessage();
-        }
-    }
+                    List<Map<String, Object>> cand = (List<Map<String, Object>>) body.get("candidates");
+                    Map<String, Object> content = (Map<String, Object>) cand.get(0).get("content");
+                    List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
+                    String text = parts.get(0).get("text");
 
-    private boolean isCancelIntent(String t) {
-        return t != null && (t.contains("그만") || t.contains("안할래"));
-    }
+                    history.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
+                    return new AiResponseDTO(text);
+                }
 
-    public void resetConversation(String userId) {
-        if (userId != null && !userId.isBlank()) {
-            userSessions.remove(userId);
-        }
-    }
+                // 🔁 503 과부하일 경우 재시도
+                if (response.getStatusCode().value() == 503) {
+                    System.out.println("⚠️ Gemini 서버 과부하, 재시도 중... (" + attempt + ")");
+                    Thread.sleep(1000);
+                    continue;
+                }
 
-    // 🔍 세션에서 마지막 예매 번호 추출
-    private String extractLastReservationNum(UserSession session) {
-        List<Map<String, Object>> history = session.getHistory();
-        for (int i = history.size() - 1; i >= 0; i--) {
-            Map<String, Object> entry = history.get(i);
-            List<Map<String, String>> parts = (List<Map<String, String>>) entry.get("parts");
-            for (Map<String, String> part : parts) {
-                String text = part.get("text");
-                String digits = text.replaceAll("[^0-9]", "");
-                if (digits.length() == 10) return digits;
+                return new AiResponseDTO("⚠️ AI 서버 응답 오류: " + response.getStatusCode());
+
+            } catch (Exception e) {
+                if (attempt >= maxRetries) {
+                    return new AiResponseDTO("🚧 현재 AI 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.");
+                }
             }
         }
-        return null;
+
+        return new AiResponseDTO("⚠️ Gemini 응답이 없습니다. 서버가 일시적으로 과부하 상태입니다.");
     }
+
+    /** 플로우 종료 문장 감지 */
+    private boolean isCancelIntent(String text) {
+        if (text == null) return false;
+        return List.of("그만", "취소", "끝", "종료", "나가기", "끝내기")
+                .stream().anyMatch(text::contains);
+    }
+
+    /** 단어 포함 여부 체크 */
+    private boolean containsAny(String text, List<String> keywords) {
+        if (text == null) return false;
+        String lower = text.toLowerCase();
+        return keywords.stream().anyMatch(lower::contains);
+    }
+    /** 대화 세션(히스토리 + 단계) 초기화 */
+    public void resetConversation(String userId) {
+        if (userId != null && userSessions.containsKey(userId)) {
+            userSessions.get(userId).reset();
+            System.out.println("🧹 [" + userId + "] 대화 세션 초기화 완료");
+        }
+    }
+
 }

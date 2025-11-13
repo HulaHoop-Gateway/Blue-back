@@ -1,5 +1,6 @@
 package com.hulahoop.blueback.ai.controller;
 
+import com.hulahoop.blueback.ai.model.dto.AiResponseDTO;
 import com.hulahoop.blueback.ai.model.service.GeminiService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,14 +22,14 @@ public class AiController {
      * 💬 AI 대화 요청
      */
     @PostMapping("/ask")
-    public ResponseEntity<Map<String, String>> ask(
+    public ResponseEntity<AiResponseDTO> ask(
             @RequestBody Map<String, String> request,
             Principal principal
     ) {
         String message = request.get("message");
         String userId = (principal != null) ? principal.getName() : "guest";
-        String response = geminiService.askGemini(message, userId);
-        return ResponseEntity.ok(Map.of("message", response));
+        AiResponseDTO response = geminiService.askGemini(message, userId);
+        return ResponseEntity.ok(response);
     }
 
     /**
