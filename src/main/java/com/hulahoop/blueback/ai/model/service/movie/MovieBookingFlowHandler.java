@@ -91,28 +91,34 @@ public class MovieBookingFlowHandler {
 
             return "🎟️ 선택한 영화: " + movieTitle + "\n\n"
                     + formatter.formatSeats(seats)
-                    + "\n원하시는 좌석을 입력해주세요. 예) A3"
+                    + "\n상세 좌석도 확인할 수 있습니다. 예시 : 상세 좌석, 상세좌석 보기"
                     + "\n\n<!-- scheduleNum:" + scheduleNum + " -->";
         }
 
-        // 4️⃣ 좌석 선택
+        // 좌석 선택
         if (s.getStep() == UserSession.Step.SEAT_SELECT) {
             String seatInput = userInput.trim().toUpperCase();
             String scheduleNum = String.valueOf(s.getBookingContext().get("scheduleNum"));
 
-            // ✅ 좌석 보기 명령
+            // 좌석 보기 명령
             if (seatInput.contains("상세") || seatInput.contains("좌석 보여")
                     || seatInput.contains("좌석 볼래") || seatInput.contains("좌석 보기")) {
                 return "🎬 좌석 선택창을 열게요!\n\n<!-- scheduleNum:" + scheduleNum + " -->";
             }
 
-            // ✅ 정상 좌석 선택
+            // 정상 좌석 선택
             MemberDTO member = userMapper.findById(userId);
             if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
 
             String phoneNumber = member.getPhoneNum();
             Map<String, Object> selectedSeat = findSeatByLabel(s.getLastSeats(), seatInput);
             if (selectedSeat == null) return "❌ 해당 좌석을 찾을 수 없습니다. 다시 입력해주세요.";
+
+            // 🔥 여기 추가해야 함: 예약된 좌석 체크
+            boolean reserved = Boolean.parseBoolean(String.valueOf(selectedSeat.get("reserved")));
+            if (reserved) {
+                return "❌ 해당 좌석은 이미 예약되었습니다. 다른 좌석을 선택해주세요.";
+            }
 
             Object seatCodeObj = selectedSeat.get("seat_code");
             if (seatCodeObj == null) return "❌ 좌석 코드 정보가 누락되어 예매할 수 없습니다. 관리자에게 문의해주세요.";
