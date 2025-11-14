@@ -15,27 +15,48 @@ public class MovieIntentResolver {
 
     public MovieIntent resolve(String input) {
         if (input == null || input.isBlank()) return MovieIntent.UNKNOWN;
+
         input = input.toLowerCase().trim();
 
-
-        if ((input.contains("영화") && input.contains("예매")) || (input.contains("영화") && input.contains("예약"))) {
+        /** 🎬 예매 시작 */
+        if (
+                (input.contains("영화") && input.contains("예매")) ||
+                        (input.contains("영화") && input.contains("예약")) ||
+                        input.contains("영화 예매")
+        ) {
             System.out.println("예매");
             return MovieIntent.START_BOOKING;
         }
 
-        if (input.contains("영화") && input.contains("취소")||(input.contains("예매") && input.contains("취소"))) {
+        /** ❌ 예매 취소 (조합 기반) — 안전하게! */
+        if (
+                (input.contains("예매") && input.contains("취소")) ||  // 예매 + 취소
+                        (input.contains("예약") && input.contains("취소")) ||  // 예약 + 취소
+                        input.contains("예매 취소") ||                        // 예매 취소
+                        input.contains("예약 취소") ||                        // 예약 취소
+                        input.matches("^(2번|2)$")                             // 메뉴에서 2번 선택
+        ) {
             System.out.println("취소");
             return MovieIntent.CANCEL_BOOKING;
         }
 
-
-        if (input.contains("내 예매") || input.contains("예매 확인") || input.contains("예약 확인")) {
+        /** 🔍 예매 조회 */
+        if (
+                input.contains("내 예매") ||
+                        input.contains("예매 확인") ||
+                        input.contains("예약 확인") ||
+                        input.matches("^(1번|1)$")          // 메뉴에서 1번 선택
+        ) {
             System.out.println("조회");
             return MovieIntent.LOOKUP_BOOKING;
         }
 
-
-        if (input.contains("상영") || input.contains("시간표") || input.contains("스케줄")) {
+        /** 🎥 상영 정보 */
+        if (
+                input.contains("상영") ||
+                        input.contains("시간표") ||
+                        input.contains("스케줄")
+        ) {
             return MovieIntent.SHOW_MOVIES;
         }
 

@@ -45,14 +45,13 @@ public class GeminiService {
 
         session.getHistory().add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
 
-        // ✅ 이미 특정 플로우(영화 예매, 자전거 등) 진행 중이라면 해당 핸들러로만 진행
+        // 이미 플로우 진행 중이면 MovieFlowRouter로 전달
         if (session.getStep() != UserSession.Step.IDLE) {
-            System.out.println("🔄 현재 플로우 진행 중: " + session.getStep());
             String movieResponse = movieFlowRouter.handle(prompt, session, userId);
-            return new AiResponseDTO(movieResponse); // Assuming movieFlowRouter.handle still returns String
+            return new AiResponseDTO(movieResponse);
         }
 
-        // 🚫 대화 종료 요청
+        // 🔥 종료 키워드 감지 (단독일 때만 종료)
         if (isCancelIntent(prompt)) {
             session.reset();
             return new AiResponseDTO("✅ 대화를 종료했습니다. 다른 도움이 필요하시면 말씀해주세요.");
@@ -62,8 +61,8 @@ public class GeminiService {
         if (containsAny(prompt, List.of("자전거", "대여", "반납", "따릉이"))) {
             List<BikeDTO> bikeDTOs = bikeFlowHandler.handleBikeFlow(prompt, session);
             if (bikeDTOs != null && !bikeDTOs.isEmpty()) {
-                return new AiResponseDTO(null, bikeDTOs); // Return bikes, no message
-            } else if (bikeDTOs != null && bikeDTOs.isEmpty()) {
+                return new AiResponseDTO(null, bikeDTOs);
+            } else if (bikeDTOs != null) {
                 return new AiResponseDTO("🚲 대여 가능한 자전거가 없습니다.");
             }
         }
@@ -71,16 +70,16 @@ public class GeminiService {
         // 🎬 영화 관련 플로우 감지
         if (containsAny(prompt, List.of("영화", "예매", "예약", "상영", "시간표", "취소"))) {
             String movieResponse = movieFlowRouter.handle(prompt, session, userId);
-            if (movieResponse != null && !movieResponse.isBlank()) return new AiResponseDTO(movieResponse);
+            if (movieResponse != null && !movieResponse.isBlank()) {
+                return new AiResponseDTO(movieResponse);
+            }
         }
 
-        // 💬 자유 대화 (플로우 외 상태에서만 실행)
+        // 자유 대화
         return callGeminiFreeChat(session.getHistory());
     }
 
-    /**
-     * Gemini 모델 호출 (자동 재시도 포함)
-     */
+
     private AiResponseDTO callGeminiFreeChat(List<Map<String, Object>> history) {
         Map<String, Object> req = Map.of("contents", history);
         HttpHeaders headers = new HttpHeaders();
@@ -100,9 +99,6 @@ public class GeminiService {
 
                 if (response.getStatusCode().is2xxSuccessful()) {
                     Map<String, Object> body = response.getBody();
-                    if (body == null || !body.containsKey("candidates"))
-                        throw new RuntimeException("빈 응답을 받았습니다.");
-
                     List<Map<String, Object>> cand = (List<Map<String, Object>>) body.get("candidates");
                     Map<String, Object> content = (Map<String, Object>) cand.get(0).get("content");
                     List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
@@ -112,9 +108,7 @@ public class GeminiService {
                     return new AiResponseDTO(text);
                 }
 
-                // 🔁 503 과부하일 경우 재시도
                 if (response.getStatusCode().value() == 503) {
-                    System.out.println("⚠️ Gemini 서버 과부하, 재시도 중... (" + attempt + ")");
                     Thread.sleep(1000);
                     continue;
                 }
@@ -128,27 +122,38 @@ public class GeminiService {
             }
         }
 
-        return new AiResponseDTO("⚠️ Gemini 응답이 없습니다. 서버가 일시적으로 과부하 상태입니다.");
+        return new AiResponseDTO("⚠️ Gemini 응답이 없습니다.");
     }
 
-    /** 플로우 종료 문장 감지 */
+    /**
+     * 종료 키워드 감지 (단독일 때만)
+     */
     private boolean isCancelIntent(String text) {
         if (text == null) return false;
-        return List.of("그만", "취소", "끝", "종료", "나가기", "끝내기")
-                .stream().anyMatch(text::contains);
+
+        String trimmed = text.trim();
+
+        // 단독 입력일 때만 종료
+        return trimmed.equals("그만") ||
+                trimmed.equals("취소") ||
+                trimmed.equals("끝") ||
+                trimmed.equals("종료") ||
+                trimmed.equals("나가기") ||
+                trimmed.equals("끝내기") ||
+                trimmed.equals("안할래");
     }
 
-    /** 단어 포함 여부 체크 */
+    /** 포함 여부 체크 공통 함수 */
     private boolean containsAny(String text, List<String> keywords) {
         if (text == null) return false;
         String lower = text.toLowerCase();
         return keywords.stream().anyMatch(lower::contains);
     }
-    /** 대화 세션(히스토리 + 단계) 초기화 */
+
+    /** 세션 초기화 */
     public void resetConversation(String userId) {
         if (userId != null && userSessions.containsKey(userId)) {
             userSessions.get(userId).reset();
-            System.out.println("🧹 [" + userId + "] 대화 세션 초기화 완료");
         }
     }
 
