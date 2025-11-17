@@ -19,29 +19,29 @@ repositories {
 }
 
 dependencies {
-    // 🌐 REST API (Spring MVC)
+    // REST API (Spring MVC)
     implementation 'org.springframework.boot:spring-boot-starter-web'
 
-    // ⚡ WebClient (Gemini API 호출용)
+    // WebClient (Gemini API 호출용)
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
-    // 🔒 Security & JWT
+    // Security & JWT
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
-    // 🗃️ MyBatis (DB 접근)
+    //️ MyBatis (DB 접근)
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
-    // ⚙️ 설정 자동 완성/매핑 지원
+    //️ 설정 자동 완성/매핑 지원
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
-    // 📊 Actuator (선택)
+    // Actuator (선택)
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-    // 🧪 테스트
+    // 테스트
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

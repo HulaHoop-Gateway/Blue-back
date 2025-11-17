@@ -28,16 +28,16 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // ✅ CORS → 먼저 명시적 설정
+                // CORS → 먼저 명시적 설정
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-                // ✅ CSRF 비활성화 (REST API 기본)
+                // CSRF 비활성화 (REST API 기본)
                 .csrf(csrf -> csrf.disable())
 
-                // ✅ 세션 비활성화 (JWT 방식)
+                // 세션 비활성화 (JWT 방식)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // ✅ 요청별 접근 권한
+                // 요청별 접근 권한
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/login",
@@ -47,28 +47,28 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
 
-                // ✅ 폼 로그인 사용 안 함
+                // 폼 로그인 사용 안 함
                 .formLogin(form -> form.disable())
 
-                // ✅ JwtFilter를 UsernamePasswordAuthenticationFilter 앞에 추가
+                // JwtFilter를 UsernamePasswordAuthenticationFilter 앞에 추가
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ✅ AuthenticationManager Bean 등록
+    // AuthenticationManager Bean 등록
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
-    // ✅ 비밀번호 암호화기 등록
+    // 비밀번호 암호화기 등록
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // ✅ CORS Configuration Bean 등록
+    // CORS Configuration Bean 등록
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();

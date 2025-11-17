@@ -37,7 +37,7 @@ public class SeatController {
 
         List<Map<String, Object>> seats = (List<Map<String, Object>>) res.get("seats");
 
-        // ✅ 프론트 SeatMap이 요구하는 데이터 구조
+        //
         List<Map<String, Object>> result = seats.stream().map(seat -> Map.of(
                 "seat_code", seat.get("seat_code"),
                 "row_label", seat.get("row_label"),
