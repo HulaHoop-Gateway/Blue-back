@@ -10,7 +10,10 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.LocalDate;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class GeminiService {
@@ -36,6 +39,7 @@ public class GeminiService {
      * 사용자 입력을 받아 적절한 흐름으로 전달하는 핵심 메서드
      */
     public synchronized AiResponseDTO askGemini(String prompt, String userId) {
+
         if (userId == null || userId.isBlank()) {
             return new AiResponseDTO("❌ 유효하지 않은 사용자입니다. 다시 로그인해주세요.");
         }
@@ -45,19 +49,29 @@ public class GeminiService {
 
         session.getHistory().add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
 
-        // 이미 플로우 진행 중이면 MovieFlowRouter로 전달
+        /** 🔥 1) 날짜 먼저 추출해서 세션에 저장 */
+        LocalDate parsedDate = extractDateFromText(prompt);
+        session.getBookingContext().put("targetDate", parsedDate.toString());
+
+        /** 🔥 0️⃣ 취소 플로우 중인지 먼저 확인 — 가장 중요 */
+        if (movieFlowRouter.isInCancelFlow(userId)) {
+            String movieResponse = movieFlowRouter.handle(prompt, session, userId);
+            return new AiResponseDTO(movieResponse);
+        }
+
+        /** ⭐ 이미 영화 플로우(예매 흐름) 중이면 계속 영화 흐름 유지 */
         if (session.getStep() != UserSession.Step.IDLE) {
             String movieResponse = movieFlowRouter.handle(prompt, session, userId);
             return new AiResponseDTO(movieResponse);
         }
 
-        // 🔥 종료 키워드 감지 (단독일 때만 종료)
+        /** 🔥 종료 키워드 */
         if (isCancelIntent(prompt)) {
             session.reset();
             return new AiResponseDTO("✅ 대화를 종료했습니다. 다른 도움이 필요하시면 말씀해주세요.");
         }
 
-        // 🚲 자전거 관련 플로우 감지
+        /** 🚲 자전거 */
         if (containsAny(prompt, List.of("자전거", "대여", "반납", "따릉이"))) {
             List<BikeDTO> bikeDTOs = bikeFlowHandler.handleBikeFlow(prompt, session);
             if (bikeDTOs != null && !bikeDTOs.isEmpty()) {
@@ -67,19 +81,45 @@ public class GeminiService {
             }
         }
 
-        // 🎬 영화 관련 플로우 감지
-        if (containsAny(prompt, List.of("영화", "예매", "예약", "상영", "시간표", "취소"))) {
+        /** 🎬 영화 플로우 시작 조건 */
+        if (containsAny(prompt, List.of("영화", "예매", "예약", "상영", "시간표"))
+                || prompt.matches("^\\d{10}$")    // ⭐ 예매번호 입력도 영화 플로우로 연결
+        ) {
             String movieResponse = movieFlowRouter.handle(prompt, session, userId);
-            if (movieResponse != null && !movieResponse.isBlank()) {
-                return new AiResponseDTO(movieResponse);
-            }
+            return new AiResponseDTO(movieResponse);
         }
 
-        // 자유 대화
+        /** 🎤 자유 대화 */
         return callGeminiFreeChat(session.getHistory());
     }
 
+    // ------------------ 🔥 날짜 추출 함수 ------------------
 
+    private LocalDate extractDateFromText(String text) {
+        if (text == null) return LocalDate.now();
+
+        text = text.toLowerCase().trim();
+        LocalDate today = LocalDate.now();
+
+        // 내일 / 모레
+        if (text.contains("내일")) return today.plusDays(1);
+        if (text.contains("모레")) return today.plusDays(2);
+
+        // 예: "11월 20일"
+        Pattern p = Pattern.compile("(\\d{1,2})월\\s*(\\d{1,2})일");
+        Matcher m = p.matcher(text);
+
+        if (m.find()) {
+            int month = Integer.parseInt(m.group(1));
+            int day = Integer.parseInt(m.group(2));
+            return LocalDate.of(2025, month, day); // 고정: 2025년
+        }
+
+        // 기본: 오늘
+        return today;
+    }
+
+    // ------------------ 자유 대화 처리 ------------------
     private AiResponseDTO callGeminiFreeChat(List<Map<String, Object>> history) {
         Map<String, Object> req = Map.of("contents", history);
         HttpHeaders headers = new HttpHeaders();
@@ -125,15 +165,11 @@ public class GeminiService {
         return new AiResponseDTO("⚠️ Gemini 응답이 없습니다.");
     }
 
-    /**
-     * 종료 키워드 감지 (단독일 때만)
-     */
+    // ------------------ 공통 유틸 ------------------
+
     private boolean isCancelIntent(String text) {
         if (text == null) return false;
-
         String trimmed = text.trim();
-
-        // 단독 입력일 때만 종료
         return trimmed.equals("그만") ||
                 trimmed.equals("취소") ||
                 trimmed.equals("끝") ||
@@ -143,18 +179,15 @@ public class GeminiService {
                 trimmed.equals("안할래");
     }
 
-    /** 포함 여부 체크 공통 함수 */
     private boolean containsAny(String text, List<String> keywords) {
         if (text == null) return false;
         String lower = text.toLowerCase();
         return keywords.stream().anyMatch(lower::contains);
     }
 
-    /** 세션 초기화 */
     public void resetConversation(String userId) {
         if (userId != null && userSessions.containsKey(userId)) {
             userSessions.get(userId).reset();
         }
     }
-
 }

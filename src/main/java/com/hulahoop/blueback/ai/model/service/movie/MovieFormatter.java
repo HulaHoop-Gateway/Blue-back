@@ -13,11 +13,16 @@ public class MovieFormatter {
         StringBuilder sb = new StringBuilder("📍 가까운 영화관 목록\n\n");
         int i = 1;
         for (Map<String, Object> cinema : cinemas) {
+
+            double dist = cinema.get("distance") != null
+                    ? Math.round(((double) cinema.get("distance")) * 10) / 10.0
+                    : -1;
+
             sb.append(i++).append(") ")
                     .append(cinema.get("branch_name"))
-                    .append(" (지점코드: ").append(cinema.get("branch_num")).append(")")
-                    .append(" - ").append(cinema.get("address"))
-                    .append("\n");
+                    .append(" - ").append(dist).append(" km\n")
+                    .append("   📍 주소: ").append(cinema.get("address"))
+                    .append(" (지점코드: ").append(cinema.get("branch_num")).append(")\n\n");
         }
         return sb.toString();
     }
@@ -81,6 +86,7 @@ public class MovieFormatter {
         sb.append("좌석 입력 예시: A2\n");
         return sb.toString();
     }
+
     public String formatReservations(List<Map<String, Object>> reservations) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < reservations.size(); i++) {
@@ -93,6 +99,4 @@ public class MovieFormatter {
         }
         return sb.toString();
     }
-
-
 }
