@@ -2,6 +2,7 @@ package com.hulahoop.blueback.ai.model.service.movie;
 
 import com.hulahoop.blueback.ai.model.service.IntentService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
+import com.hulahoop.blueback.kakao.model.service.KakaoLocalService;
 import com.hulahoop.blueback.member.model.dao.UserMapper;
 import com.hulahoop.blueback.member.model.dto.MemberDTO;
 import org.springframework.stereotype.Component;
@@ -14,11 +15,18 @@ public class MovieBookingFlowHandler {
     private final IntentService intentService;
     private final MovieFormatter formatter;
     private final UserMapper userMapper;
+    private final KakaoLocalService kakaoLocalService;
 
-    public MovieBookingFlowHandler(IntentService intentService, MovieFormatter formatter, UserMapper userMapper) {
+    public MovieBookingFlowHandler(
+            IntentService intentService,
+            MovieFormatter formatter,
+            UserMapper userMapper,
+            KakaoLocalService kakaoLocalService
+    ) {
         this.intentService = intentService;
         this.formatter = formatter;
         this.userMapper = userMapper;
+        this.kakaoLocalService = kakaoLocalService;
     }
 
     @SuppressWarnings("unchecked")
@@ -81,7 +89,6 @@ public class MovieBookingFlowHandler {
         if (lower.contains("오늘")) return "today";
         if (lower.contains("내일")) return "tomorrow";
 
-        // ex: "11월 20일", "11월20일"
         if (lower.matches(".*\\d{1,2}월\\s*\\d{1,2}일.*")) {
             String month = lower.replaceAll(".*?(\\d{1,2})월.*", "$1");
             String day = lower.replaceAll(".*?(\\d{1,2})일.*", "$1");
@@ -97,31 +104,48 @@ public class MovieBookingFlowHandler {
 
         String normalized = userInput.trim().toLowerCase();
 
-        // 🔥 모든 단계에서 글로벌 명령어 먼저 체크
         String global = checkGlobalCommands(normalized, s);
         if (global != null) return global;
 
-        // ==============================
-        // STEP 1: 예매 시작 → 지점 목록 출력
-        // ==============================
+        // ------------------------------------------------
+        // STEP 1: 예매 시작 → 영화관 목록 + 거리순 정렬
+        // ------------------------------------------------
         if (s.getStep() == UserSession.Step.IDLE) {
+
+            String dateFilter = extractDateFilter(userInput);
+            if (dateFilter != null) {
+                s.getBookingContext().put("dateFilter", dateFilter);
+            } else {
+                s.getBookingContext().putIfAbsent("dateFilter", "today");
+            }
+
+            MemberDTO member = userMapper.findById(userId);
+            if (member == null) return "회원 정보를 찾을 수 없습니다.";
+            String userAddress = member.getAddress();
 
             Map<String, Object> res = intentService.processIntent("movie_booking_step1", Map.of());
             List<Map<String, Object>> cinemas = safeList(res.get("cinemas"));
 
-            s.setLastCinemas(cinemas);
+            // ★★★★★ 수정된 부분 ★★★★★
+            List<Map<String, Object>> sorted =
+                    kakaoLocalService.sortCinemasByDistance(
+                            userInput,      // 사용자가 말한 키워드(예: 잠실역)
+                            userAddress,    // fallback: 사용자 DB 주소
+                            cinemas
+                    );
+
+            s.setLastCinemas(sorted);
             s.setStep(UserSession.Step.BRANCH_SELECT);
 
-            return formatter.formatCinemas(cinemas)
+            return formatter.formatCinemas(sorted)
                     + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
 
-        // ==============================
+        // ------------------------------------------------
         // STEP 2: 지점 선택
-        // ==============================
+        // ------------------------------------------------
         if (s.getStep() == UserSession.Step.BRANCH_SELECT) {
 
-            // 날짜 필터 입력했으면 저장
             String dateFilter = extractDateFilter(userInput);
             if (dateFilter != null) s.getBookingContext().put("dateFilter", dateFilter);
 
@@ -132,6 +156,7 @@ public class MovieBookingFlowHandler {
             }
 
             Map<String, Object> selected = s.getLastCinemas().get(idx - 1);
+
             String branchNum = String.valueOf(selected.get("branch_num"));
             String branchName = String.valueOf(selected.get("branch_name"));
 
@@ -156,9 +181,9 @@ public class MovieBookingFlowHandler {
                     + "\n예매할 스케줄 번호를 입력해주세요. 예) 2번";
         }
 
-        // ==============================
+        // ------------------------------------------------
         // STEP 3: 스케줄 선택
-        // ==============================
+        // ------------------------------------------------
         if (s.getStep() == UserSession.Step.MOVIE_SELECT) {
 
             Integer idx = resolveIndexFromInput(userInput, s.getLastMovies().size());
@@ -186,9 +211,9 @@ public class MovieBookingFlowHandler {
                     + "\n\n<!-- scheduleNum:" + sel.get("scheduleNum") + " -->";
         }
 
-        // ==============================
+        // ------------------------------------------------
         // STEP 4: 좌석 선택
-        // ==============================
+        // ------------------------------------------------
         if (s.getStep() == UserSession.Step.SEAT_SELECT) {
 
             String seatInput = userInput.trim().toUpperCase();
@@ -232,4 +257,5 @@ public class MovieBookingFlowHandler {
 
         return "처리할 수 없는 상태입니다. 다시 시도해주세요.";
     }
+
 }
