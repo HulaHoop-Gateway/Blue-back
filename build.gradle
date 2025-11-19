@@ -19,34 +19,36 @@ repositories {
 }
 
 dependencies {
-    // REST API (Spring MVC)
+    // Spring
     implementation 'org.springframework.boot:spring-boot-starter-web'
-
-    // WebClient (Gemini API 호출용)
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
-
-    // Security & JWT
     implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
-    //️ MyBatis (DB 접근)
+    // MyBatis
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
-    //️ 설정 자동 완성/매핑 지원
-    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
-
-    // Actuator (선택)
+    // Actuator
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-    // 테스트
+    // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    // macOS ARM DNS resolver
+    implementation "io.netty:netty-resolver-dns-native-macos:4.1.107.Final:osx-aarch_64"
+
+
 }
+
+
 
 tasks.named('test') {
     useJUnitPlatform()

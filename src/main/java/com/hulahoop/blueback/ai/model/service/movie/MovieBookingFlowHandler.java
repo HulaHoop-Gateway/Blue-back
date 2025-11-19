@@ -108,10 +108,11 @@ public class MovieBookingFlowHandler {
         if (global != null) return global;
 
         // ------------------------------------------------
-        // STEP 1: 예매 시작 → 영화관 목록 + 거리순 정렬
-        // ------------------------------------------------
+// STEP 1: 예매 시작 → 영화관 목록 + 거리순 정렬
+// ------------------------------------------------
         if (s.getStep() == UserSession.Step.IDLE) {
 
+            // 날짜 필터 저장
             String dateFilter = extractDateFilter(userInput);
             if (dateFilter != null) {
                 s.getBookingContext().put("dateFilter", dateFilter);
@@ -119,27 +120,50 @@ public class MovieBookingFlowHandler {
                 s.getBookingContext().putIfAbsent("dateFilter", "today");
             }
 
+            // 사용자 정보 조회
             MemberDTO member = userMapper.findById(userId);
             if (member == null) return "회원 정보를 찾을 수 없습니다.";
             String userAddress = member.getAddress();
 
+            // 1) 일단 영화관 목록은 Gateway에서 기본 제공 받음
             Map<String, Object> res = intentService.processIntent("movie_booking_step1", Map.of());
             List<Map<String, Object>> cinemas = safeList(res.get("cinemas"));
 
-            // ★★★★★ 수정된 부분 ★★★★★
+            // 2) 사용자 입력에서 장소 키워드 추출
+            // ex) "잠실역", "홍대", "건대입구"
+            String keyword = kakaoLocalService.extractPlaceKeyword(userInput);
+
+            Map<String, Object> coord;
+
+            if (keyword != null) {
+                // ⭐ 특정 장소 입력 있는 경우 → 그 장소 기준으로 정렬
+                coord = kakaoLocalService.searchCoordinate(keyword);
+
+                if (coord == null) {
+                    // 특정 장소가 검색되지 않을 경우 → 사용자 주소 fallback
+                    coord = kakaoLocalService.searchCoordinate(userAddress);
+                }
+
+            } else {
+                // ⭐ 기본 시나리오 → 사용자 DB 주소 기준
+                coord = kakaoLocalService.searchCoordinate(userAddress);
+            }
+
+            // 3) 거리 기준 정렬
             List<Map<String, Object>> sorted =
                     kakaoLocalService.sortCinemasByDistance(
-                            userInput,      // 사용자가 말한 키워드(예: 잠실역)
-                            userAddress,    // fallback: 사용자 DB 주소
+                            coord,
                             cinemas
                     );
 
+            // 세션 저장
             s.setLastCinemas(sorted);
             s.setStep(UserSession.Step.BRANCH_SELECT);
 
             return formatter.formatCinemas(sorted)
                     + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
+
 
         // ------------------------------------------------
         // STEP 2: 지점 선택
