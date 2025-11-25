@@ -10,11 +10,22 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+
+    // 공개 허용 경로 목록
+    private static final List<String> PUBLIC_PATHS = List.of(
+            "/api/login",
+            "/api/member/signup",
+            "/api/member/check-id",
+            "/api/payments",          // 결제 생성
+            "/api/payments/create",
+            "/api/payments/confirm"   // 결제 승인 콜백
+    );
 
     public JwtFilter(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
@@ -29,25 +40,19 @@ public class JwtFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // ✅ 1️⃣ 로그로 요청 경로 확인
-        System.out.println("\n[JwtFilter] 🚀 요청 경로: " + path + " (" + method + ")");
-
-        // ✅ 2️⃣ Preflight (OPTIONS) 요청은 항상 허용
+        // 1) OPTIONS 요청은 항상 통과 (CORS)
         if ("OPTIONS".equalsIgnoreCase(method)) {
-            System.out.println("[JwtFilter] ✅ OPTIONS 요청 통과 (CORS preflight)");
-            response.setStatus(HttpServletResponse.SC_OK);
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ✅ 3️⃣ 회원가입, 로그인 등 공개 경로는 JWT 검증 제외
+        // 2) 공개 경로는 JWT 검증 제외
         if (isPublicPath(path)) {
-            System.out.println("[JwtFilter] ✅ 공개 경로로 인식되어 필터 통과: " + path);
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ✅ 4️⃣ JWT 인증 헤더 확인
+        // 3) JWT Authorization 헤더 검증
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -55,29 +60,29 @@ public class JwtFilter extends OncePerRequestFilter {
 
             if (jwtUtil.validateToken(token)) {
                 String username = jwtUtil.extractUsername(token);
-                System.out.println("[JwtFilter] 🔐 유효한 토큰 - 사용자: " + username);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(username, null, null);
+
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+
             } else {
-                System.out.println("[JwtFilter] ❌ 유효하지 않은 토큰");
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.getWriter().write("Invalid Token");
                 return;
             }
+
         } else {
-            System.out.println("[JwtFilter] ❌ Authorization 헤더 없음 → 403");
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("Missing or Invalid Authorization Header");
             return;
         }
 
-        // ✅ 5️⃣ 다음 필터로 진행
+        // 4) 다음 필터로 진행
         filterChain.doFilter(request, response);
     }
 
-    // ✅ 공개 경로 관리 (트레일링 슬래시와 쿼리스트링 대비)
+    // 공개 허용 경로 체크
     private boolean isPublicPath(String path) {
         if (path == null) return false;
 
@@ -86,11 +91,6 @@ public class JwtFilter extends OncePerRequestFilter {
             path = path.substring(0, path.length() - 1);
         }
 
-        // ✅ 공개 허용 API 목록
-        return path.startsWith("/api/login")
-                || path.startsWith("/api/member/signup")
-                || path.startsWith("/api/member/check-id")
-                || path.startsWith("/api/public")
-                || path.startsWith("/api/test");
+        return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
     }
 }

@@ -21,8 +21,7 @@ public class MovieBookingFlowHandler {
             IntentService intentService,
             MovieFormatter formatter,
             UserMapper userMapper,
-            KakaoLocalService kakaoLocalService
-    ) {
+            KakaoLocalService kakaoLocalService) {
         this.intentService = intentService;
         this.formatter = formatter;
         this.userMapper = userMapper;
@@ -35,21 +34,25 @@ public class MovieBookingFlowHandler {
     }
 
     private boolean containsAny(String text, List<String> words) {
-        if (text == null) return false;
+        if (text == null)
+            return false;
         String lower = text.toLowerCase();
         return words.stream().anyMatch(lower::contains);
     }
 
     private Integer resolveIndexFromInput(String input, int maxSize) {
-        if (input == null) return null;
+        if (input == null)
+            return null;
         String digits = input.replaceAll("[^0-9]", "");
-        if (digits.isEmpty()) return null;
+        if (digits.isEmpty())
+            return null;
         int v = Integer.parseInt(digits);
         return (v >= 1 && v <= maxSize) ? v : null;
     }
 
     private Map<String, Object> findSeatByLabel(List<Map<String, Object>> seats, String label) {
-        if (label.length() < 2) return null;
+        if (label.length() < 2)
+            return null;
         String row = label.substring(0, 1);
         String col = label.substring(1);
 
@@ -86,8 +89,10 @@ public class MovieBookingFlowHandler {
     private String extractDateFilter(String userInput) {
         String lower = userInput.toLowerCase();
 
-        if (lower.contains("오늘")) return "today";
-        if (lower.contains("내일")) return "tomorrow";
+        if (lower.contains("오늘"))
+            return "today";
+        if (lower.contains("내일"))
+            return "tomorrow";
 
         if (lower.matches(".*\\d{1,2}월\\s*\\d{1,2}일.*")) {
             String month = lower.replaceAll(".*?(\\d{1,2})월.*", "$1");
@@ -100,16 +105,18 @@ public class MovieBookingFlowHandler {
 
     public String handle(String userInput, UserSession s, String userId) {
 
-        if (userInput == null) return "입력을 다시 말씀해주세요.";
+        if (userInput == null)
+            return "입력을 다시 말씀해주세요.";
 
         String normalized = userInput.trim().toLowerCase();
 
         String global = checkGlobalCommands(normalized, s);
-        if (global != null) return global;
+        if (global != null)
+            return global;
 
         // ------------------------------------------------
-// STEP 1: 예매 시작 → 영화관 목록 + 거리순 정렬
-// ------------------------------------------------
+        // STEP 1: 예매 시작 → 영화관 목록 + 거리순 정렬
+        // ------------------------------------------------
         if (s.getStep() == UserSession.Step.IDLE) {
 
             // 날짜 필터 저장
@@ -122,7 +129,8 @@ public class MovieBookingFlowHandler {
 
             // 사용자 정보 조회
             MemberDTO member = userMapper.findById(userId);
-            if (member == null) return "회원 정보를 찾을 수 없습니다.";
+            if (member == null)
+                return "회원 정보를 찾을 수 없습니다.";
             String userAddress = member.getAddress();
 
             // 1) 일단 영화관 목록은 Gateway에서 기본 제공 받음
@@ -150,11 +158,9 @@ public class MovieBookingFlowHandler {
             }
 
             // 3) 거리 기준 정렬
-            List<Map<String, Object>> sorted =
-                    kakaoLocalService.sortCinemasByDistance(
-                            coord,
-                            cinemas
-                    );
+            List<Map<String, Object>> sorted = kakaoLocalService.sortCinemasByDistance(
+                    coord,
+                    cinemas);
 
             // 세션 저장
             s.setLastCinemas(sorted);
@@ -164,14 +170,14 @@ public class MovieBookingFlowHandler {
                     + "\n방문하실 지점 번호를 입력해주세요. 예) 1번";
         }
 
-
         // ------------------------------------------------
         // STEP 2: 지점 선택
         // ------------------------------------------------
         if (s.getStep() == UserSession.Step.BRANCH_SELECT) {
 
             String dateFilter = extractDateFilter(userInput);
-            if (dateFilter != null) s.getBookingContext().put("dateFilter", dateFilter);
+            if (dateFilter != null)
+                s.getBookingContext().put("dateFilter", dateFilter);
 
             Integer idx = resolveIndexFromInput(userInput, s.getLastCinemas().size());
             if (idx == null) {
@@ -191,9 +197,7 @@ public class MovieBookingFlowHandler {
                     "movie_booking_step2",
                     Map.of(
                             "branchNum", branchNum,
-                            "dateFilter", s.getBookingContext().getOrDefault("dateFilter", "today")
-                    )
-            );
+                            "dateFilter", s.getBookingContext().getOrDefault("dateFilter", "today")));
 
             List<Map<String, Object>> schedules = safeList(res.get("movies"));
             s.setLastMovies(schedules);
@@ -222,8 +226,7 @@ public class MovieBookingFlowHandler {
 
             Map<String, Object> res = intentService.processIntent(
                     "movie_booking_step3",
-                    Map.of("scheduleNum", sel.get("scheduleNum"))
-            );
+                    Map.of("scheduleNum", sel.get("scheduleNum")));
 
             List<Map<String, Object>> seats = safeList(res.get("seats"));
             s.setLastSeats(seats);
@@ -236,20 +239,21 @@ public class MovieBookingFlowHandler {
         }
 
         // ------------------------------------------------
-        // STEP 4: 좌석 선택
+        // STEP 4: 좌석 선택 → 결제 확인
         // ------------------------------------------------
         if (s.getStep() == UserSession.Step.SEAT_SELECT) {
 
             String seatInput = userInput.trim().toUpperCase();
-            String scheduleNum = String.valueOf(s.getBookingContext().get("scheduleNum"));
 
             MemberDTO member = userMapper.findById(userId);
-            if (member == null) return "회원 정보를 찾을 수 없습니다.";
+            if (member == null)
+                return "회원 정보를 찾을 수 없습니다.";
 
             String phoneNumber = member.getPhoneNum();
 
             Map<String, Object> seat = findSeatByLabel(s.getLastSeats(), seatInput);
-            if (seat == null) return "해당 좌석을 찾을 수 없습니다. 다시 입력해주세요.";
+            if (seat == null)
+                return "해당 좌석을 찾을 수 없습니다. 다시 입력해주세요.";
 
             if (Boolean.parseBoolean(String.valueOf(seat.get("reserved")))) {
                 return "❌ 이미 예약된 좌석입니다. 다른 좌석을 선택해주세요.";
@@ -257,26 +261,65 @@ public class MovieBookingFlowHandler {
 
             int seatCode = Integer.parseInt(String.valueOf(seat.get("seat_code")));
 
-            Map<String, Object> res = intentService.processIntent(
-                    "movie_booking_step4",
-                    Map.of(
-                            "scheduleNum", scheduleNum,
-                            "seatCode", seatCode,
-                            "phoneNumber", phoneNumber
-                    )
-            );
+            // 좌석 정보 저장
+            s.getBookingContext().put("seatCode", seatCode);
+            s.getBookingContext().put("phoneNumber", phoneNumber);
+            s.getBookingContext().put("seatLabel", seatInput);
 
-            if (res.containsKey("message")) {
+            // 좌석 가격 조회 (DB에서 가져온 가격 사용)
+            Object priceObj = seat.get("price");
+            int pricePerSeat = (priceObj instanceof Number) ? ((Number) priceObj).intValue() : 12000;
+
+            s.getBookingContext().put("amount", pricePerSeat);
+
+            // JSON 형식으로 결제 정보 및 액션 타입 포함
+            String jsonData = String.format(
+                    "{\"actionType\":\"PAYMENT_CONFIRM\",\"amount\":%d,\"phone\":\"%s\"}",
+                    pricePerSeat, phoneNumber);
+
+            // 다음 단계로 변경 (결제 대기)
+            s.setStep(UserSession.Step.MOVIE_PAYMENT_CONFIRM);
+
+            return "좌석이 선택되었습니다.\n\n"
+                    + "선택한 좌석: " + seatInput + "\n"
+                    + "금액: " + pricePerSeat + "원\n\n"
+                    + jsonData; // JSON 데이터를 텍스트에 포함
+        }
+
+        // ------------------------------------------------
+        // STEP 5: 결제 확인 후 최종 예약 확정
+        // ------------------------------------------------
+        if (s.getStep() == UserSession.Step.MOVIE_PAYMENT_CONFIRM) {
+            // 사용자 입력이 '결제'를 의미한다고 가정 (실제로는 프론트엔드가 상태를 파악)
+            if (userInput.toLowerCase().contains("결제") || userInput.toLowerCase().contains("confirm")) {
+
+                String scheduleNum = String.valueOf(s.getBookingContext().get("scheduleNum"));
+                int seatCode = (int) s.getBookingContext().get("seatCode");
+                String phoneNumber = String.valueOf(s.getBookingContext().get("phoneNumber"));
+
+                // movie_booking_step4 인텐트 호출 (최종 예약)
+                Map<String, Object> res = intentService.processIntent(
+                        "movie_booking_step4",
+                        Map.of(
+                                "scheduleNum", scheduleNum,
+                                "seatCode", seatCode,
+                                "phoneNumber", phoneNumber));
+
+                if (res.containsKey("message")) {
+                    s.reset();
+                    return "🎉 예매가 완료되었습니다!\n\n"
+                            + "다음 작업을 선택해주세요:\n"
+                            + "1️⃣ 내 예매 내역 확인\n"
+                            + "2️⃣ 예매 취소하기\n"
+                            + "3️⃣ 다른 영화 예매하기\n"
+                            + "4️⃣ 종료하기";
+                }
+
                 s.reset();
-                return "🎉 예매가 완료되었습니다!\n\n"
-                        + "다음 작업을 선택해주세요:\n"
-                        + "1️⃣ 내 예매 내역 확인\n"
-                        + "2️⃣ 예매 취소하기\n"
-                        + "3️⃣ 다른 영화 예매하기\n"
-                        + "4️⃣ 종료하기";
+                return "❌ 예매 실패: " + res.getOrDefault("error", "알 수 없는 오류");
+            } else {
+                return "결제를 진행해 주시거나, 결제를 취소하시려면 '취소'를 입력해 주세요.";
             }
-
-            return "❌ 예매 실패: " + res.getOrDefault("error", "알 수 없는 오류");
         }
 
         return "처리할 수 없는 상태입니다. 다시 시도해주세요.";
