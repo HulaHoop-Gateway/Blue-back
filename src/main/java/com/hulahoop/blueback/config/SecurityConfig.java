@@ -35,8 +35,11 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .authorizeHttpRequests(auth -> auth
-                        // 🔥 CORS 프리플라이트 반드시 허용
+                        // CORS preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // 결제 API 공개 (중요)
+                        .requestMatchers("/api/payments/**").permitAll()
 
                         // 로그인 관련 공개
                         .requestMatchers(
@@ -45,7 +48,9 @@ public class SecurityConfig {
                                 "/api/member/check-id"
                         ).permitAll()
 
-                        // 나머지 JWT 필수
+                        .requestMatchers("/api/ai/reset").permitAll()
+
+                        // 나머지는 JWT 인증 필요
                         .anyRequest().authenticated()
                 )
 
@@ -54,6 +59,7 @@ public class SecurityConfig {
 
         return http.build();
     }
+
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
@@ -69,7 +75,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedOrigins(List.of("http://localhost:5173","http://localhost:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
 
