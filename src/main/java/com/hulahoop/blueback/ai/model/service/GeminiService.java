@@ -26,11 +26,10 @@ public class GeminiService {
     @Value("${gemini.api.key}")
     private String apiKey;
 
-    private final String baseUrl =
-            "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+    private final String baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
     public GeminiService(MovieFlowRouter movieFlowRouter,
-                         BikeFlowRouter bikeFlowRouter) {
+            BikeFlowRouter bikeFlowRouter) {
         this.movieFlowRouter = movieFlowRouter;
         this.bikeFlowRouter = bikeFlowRouter;
     }
@@ -53,7 +52,12 @@ public class GeminiService {
 
         // ✅ 0) 영화 취소 플로우 우선 처리
         if (movieFlowRouter.isInCancelFlow(userId)) {
-            return new AiResponseDTO(movieFlowRouter.handle(prompt, session, userId));
+            String result = movieFlowRouter.handle(prompt, session, userId);
+            AiResponseDTO response = new AiResponseDTO(result);
+            if (session.getLastCinemas() != null && !session.getLastCinemas().isEmpty()) {
+                response.setCinemas(session.getLastCinemas());
+            }
+            return response;
         }
 
         // ✅ 1) 이미 진행 중인 상태 유지
@@ -69,14 +73,23 @@ public class GeminiService {
             }
 
             if (session.getFlowType() == UserSession.FlowType.MOVIE) {
-                return new AiResponseDTO(movieFlowRouter.handle(prompt, session, userId));
+                String result = movieFlowRouter.handle(prompt, session, userId);
+                AiResponseDTO response = new AiResponseDTO(result);
+                if (session.getLastCinemas() != null && !session.getLastCinemas().isEmpty()) {
+                    response.setCinemas(session.getLastCinemas());
+                }
+                return response;
             }
 
             if (session.getFlowType() == UserSession.FlowType.BIKE) {
-                return new AiResponseDTO(bikeFlowRouter.handle(prompt, session, userId));
+                String result = bikeFlowRouter.handle(prompt, session, userId);
+                AiResponseDTO response = new AiResponseDTO(result);
+                if (session.getLastBikes() != null && !session.getLastBikes().isEmpty()) {
+                    response.setBicycles(session.getLastBikes());
+                }
+                return response;
             }
         }
-
 
         // ✅ 2) 종료 의도
         if (isCancelIntent(prompt)) {
@@ -89,7 +102,12 @@ public class GeminiService {
         // 영화 예약 확정 표현
         if (lower.contains("영화 예약") || lower.contains("영화 예매")) {
             session.setFlowType(UserSession.FlowType.MOVIE);
-            return new AiResponseDTO(movieFlowRouter.handle(prompt, session, userId));
+            String result = movieFlowRouter.handle(prompt, session, userId);
+            AiResponseDTO response = new AiResponseDTO(result);
+            if (session.getLastCinemas() != null && !session.getLastCinemas().isEmpty()) {
+                response.setCinemas(session.getLastCinemas());
+            }
+            return response;
         }
 
         // 자전거 예약 확정 표현
@@ -97,27 +115,41 @@ public class GeminiService {
                 lower.contains("따릉이 예약") ||
                 lower.contains("바이크 예약")) {
             session.setFlowType(UserSession.FlowType.BIKE);
-            return new AiResponseDTO(bikeFlowRouter.handle(prompt, session, userId));
+            String result = bikeFlowRouter.handle(prompt, session, userId);
+            AiResponseDTO response = new AiResponseDTO(result);
+            if (session.getLastBikes() != null && !session.getLastBikes().isEmpty()) {
+                response.setBicycles(session.getLastBikes());
+            }
+            return response;
         }
 
         // ✅ 4) 단독 "예약" 입력 — 흐름 시작 금지
         if (lower.equals("예약")) {
             return new AiResponseDTO(
                     "어떤 예약을 도와드릴까요?\n\n" +
-                            "🎬 영화 예매\n🚲 자전거 대여\n\n말씀해주세요!"
-            );
+                            "🎬 영화 예매\n🚲 자전거 대여\n\n말씀해주세요!");
         }
 
         // ✅ 5) 일반 키워드 기반 진입 (충돌 없이)
         if (containsAny(lower, List.of("자전거", "따릉이", "바이크", "전기자전거"))) {
             session.setFlowType(UserSession.FlowType.BIKE);
-            return new AiResponseDTO(bikeFlowRouter.handle(prompt, session, userId));
+            String result = bikeFlowRouter.handle(prompt, session, userId);
+            AiResponseDTO response = new AiResponseDTO(result);
+            if (session.getLastBikes() != null && !session.getLastBikes().isEmpty()) {
+                response.setBicycles(session.getLastBikes());
+            }
+            return response;
         }
 
         if (containsAny(lower, List.of("영화", "예매", "상영", "시간표"))
                 || prompt.matches("^\\d{10}$")) {
             session.setFlowType(UserSession.FlowType.MOVIE);
-            return new AiResponseDTO(movieFlowRouter.handle(prompt, session, userId));
+            String result = movieFlowRouter.handle(prompt, session, userId);
+            AiResponseDTO response = new AiResponseDTO(result);
+            if (session.getLastCinemas() != null && !session.getLastCinemas().isEmpty()) {
+                response.setCinemas(session.getLastCinemas());
+            }
+            return response;
         }
 
         // ✅ 6) 자유 대화 모드
@@ -125,13 +157,16 @@ public class GeminiService {
     }
 
     private LocalDate extractDateFromText(String text) {
-        if (text == null) return LocalDate.now();
+        if (text == null)
+            return LocalDate.now();
 
         text = text.toLowerCase().trim();
         LocalDate today = LocalDate.now();
 
-        if (text.contains("내일")) return today.plusDays(1);
-        if (text.contains("모레")) return today.plusDays(2);
+        if (text.contains("내일"))
+            return today.plusDays(1);
+        if (text.contains("모레"))
+            return today.plusDays(2);
 
         Pattern p = Pattern.compile("(\\d{1,2})월\\s*(\\d{1,2})일");
         Matcher m = p.matcher(text);
@@ -154,8 +189,7 @@ public class GeminiService {
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     baseUrl + "?key=" + apiKey,
                     new HttpEntity<>(req, headers),
-                    Map.class
-            );
+                    Map.class);
 
             if (!response.getStatusCode().is2xxSuccessful()) {
                 return new AiResponseDTO("AI 서버 오류: " + response.getStatusCode());
@@ -176,7 +210,8 @@ public class GeminiService {
     }
 
     private boolean isCancelIntent(String text) {
-        if (text == null) return false;
+        if (text == null)
+            return false;
         String trimmed = text.trim();
         return trimmed.equals("그만") ||
                 trimmed.equals("취소") ||
@@ -188,7 +223,8 @@ public class GeminiService {
     }
 
     private boolean containsAny(String text, List<String> keywords) {
-        if (text == null) return false;
+        if (text == null)
+            return false;
         String lower = text.toLowerCase();
         return keywords.stream().anyMatch(lower::contains);
     }

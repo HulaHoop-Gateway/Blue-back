@@ -6,7 +6,7 @@
 <mapper namespace="com.hulahoop.blueback.history.model.dao.HistoryMapper">
 
     <resultMap id="historyResultMap" type="com.hulahoop.blueback.history.model.dto.HistoryResponseDto">
-        <id property="transactionNum" column="transation_num"/>
+        <id property="transactionNum" column="transaction_num"/>
 
         <result property="memberName" column="member_name"/>
         <result property="merchantName" column="merchant_name"/>
@@ -21,7 +21,7 @@
 
     <select id="findHistoryByMemberCode" resultMap="historyResultMap">
         SELECT
-        t.transation_num,
+        t.transaction_num,
         m.name AS member_name,
         mc.merchant_name AS merchant_name,
         t.amount_used,
@@ -38,7 +38,7 @@
             AND t.status = #{status}
         </if>
         ORDER BY
-        t.payment_date DESC, t.transation_num DESC
+        t.payment_date DESC, t.transaction_num DESC
     </select>
 
 </mapper>

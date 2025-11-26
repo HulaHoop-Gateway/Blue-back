@@ -2,6 +2,9 @@ package com.hulahoop.blueback.ai.model.service.bike;
 
 import com.hulahoop.blueback.ai.model.service.IntentService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
+import com.hulahoop.blueback.kakao.model.service.KakaoLocalService;
+import com.hulahoop.blueback.member.model.dao.UserMapper;
+import com.hulahoop.blueback.member.model.dto.MemberDTO;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -14,9 +17,15 @@ import java.util.*;
 public class BikeFlowHandler {
 
     private final IntentService intentService;
+    private final KakaoLocalService kakaoLocalService;
+    private final UserMapper userMapper;
 
-    public BikeFlowHandler(IntentService intentService) {
+    public BikeFlowHandler(IntentService intentService,
+            KakaoLocalService kakaoLocalService,
+            UserMapper userMapper) {
         this.intentService = intentService;
+        this.kakaoLocalService = kakaoLocalService;
+        this.userMapper = userMapper;
     }
 
     @SuppressWarnings("unchecked")
@@ -26,10 +35,16 @@ public class BikeFlowHandler {
 
     public String handle(String userInput, UserSession session, String userId) {
 
-        // STEP 1: 자전거 목록 (수정 없음)
+        // STEP 1: 자전거 목록 (거리 계산 추가)
         if (session.getStep() == UserSession.Step.IDLE) {
-            // ... (기존 로직 유지)
+            // 사용자 정보 조회
+            MemberDTO member = userMapper.findById(userId);
+            if (member == null) {
+                return "회원 정보를 찾을 수 없습니다.";
+            }
+            String userAddress = member.getAddress();
 
+            // 자전거 목록 조회
             Map<String, Object> res = intentService.processIntent("bike_list", Map.of());
             List<Map<String, Object>> bikes = safeList(res.get("bicycles"));
 
@@ -37,18 +52,43 @@ public class BikeFlowHandler {
                 return "현재 대여 가능한 자전거가 없습니다.";
             }
 
-            session.setLastBikes(bikes);
+            // 장소 키워드 추출
+            String keyword = kakaoLocalService.extractPlaceKeyword(userInput);
+            Map<String, Object> coord;
+
+            if (keyword != null) {
+                // 특정 장소 입력이 있는 경우 그 장소 기준으로 정렬
+                coord = kakaoLocalService.searchCoordinate(keyword);
+                if (coord == null) {
+                    // 검색 실패 시 사용자 주소 fallback
+                    coord = kakaoLocalService.searchCoordinate(userAddress);
+                }
+            } else {
+                // 기본: 사용자 주소 기준
+                coord = kakaoLocalService.searchCoordinate(userAddress);
+            }
+
+            // 거리 계산 및 정렬 (kakaoLocalService.sortCinemasByDistance와 동일한 방식)
+            List<Map<String, Object>> sorted = kakaoLocalService.sortBikesByDistance(coord, bikes);
+
+            session.setLastBikes(sorted);
             session.setStep(UserSession.Step.BIKE_SELECT);
 
-            StringBuilder sb = new StringBuilder("현재 이용 가능한 자전거 목록입니다:\n\n");
+            StringBuilder sb = new StringBuilder("🚲 가까운 자전거 목록\n\n");
             int i = 1;
-            for (Map<String, Object> b : bikes) {
+            for (Map<String, Object> b : sorted) {
+                double dist = b.get("distance") != null
+                        ? Math.round(((double) b.get("distance")) * 10) / 10.0
+                        : -1;
+
                 sb.append(i++)
                         .append(") ")
                         .append(b.get("bicycleCode"))
-                        .append(" - ")
+                        .append(" (")
                         .append(b.get("bicycleType"))
-                        .append("\n");
+                        .append(") - ")
+                        .append(dist)
+                        .append(" km\n");
             }
 
             return sb.append("\n예약하실 자전거 번호를 입력해주세요. 예) 1번").toString();
@@ -66,8 +106,7 @@ public class BikeFlowHandler {
             String bicycleType = String.valueOf(selectedBike.get("bicycleType"));
 
             // 1. bike_rate 인텐트 호출
-            Map<String, Object> rateRes =
-                    intentService.processIntent("bike_rate", Map.of("bicycleType", bicycleType));
+            Map<String, Object> rateRes = intentService.processIntent("bike_rate", Map.of("bicycleType", bicycleType));
 
             Object rateObj = rateRes.get("ratePerHour");
             int ratePerHour = (rateObj instanceof Number) ? ((Number) rateObj).intValue() : 0;
@@ -115,7 +154,8 @@ public class BikeFlowHandler {
             session.getBookingContext().put("endTime", end);
 
             int ratePerHour = (session.getBookingContext().get("ratePerHour") instanceof Number)
-                    ? (int) session.getBookingContext().get("ratePerHour") : 0;
+                    ? (int) session.getBookingContext().get("ratePerHour")
+                    : 0;
 
             long minutes = calculateMinutes(start, end);
 
@@ -125,18 +165,20 @@ public class BikeFlowHandler {
 
             // 사용자 전화번호 가져오기
             String phone = getUserPhone(userId);
+            session.getBookingContext().put("phoneNumber", phone); // Context에 저장
 
             // JSON 형식으로 결제 정보 및 액션 타입 포함
             String jsonData = String.format(
-                    "{\"actionType\":\"PAYMENT_CONFIRM\",\"amount\":%d,\"phone\":\"%s\"}",
-                    amount, phone
-            );
+                    "{\"actionType\":\"PAYMENT_CONFIRM\",\"amount\":%d,\"phone\":\"%s\",\"paymentType\":\"BICYCLE\"}",
+                    amount, phone);
 
             // 다음 단계로 변경 (결제 대기)
             session.setStep(UserSession.Step.BIKE_PAYMENT_CONFIRM);
 
-            return "예약 정보가 확인되었습니다.\n\n"
-                    + "이용 시간: " + start + " ~ " + end + "\n"
+            return "🚲 자전거 예약이 완료되었습니다!\n\n"
+                    + "이용 시간: " + start + " ~ " + end + "\n\n"
+                    + "상세 내역은 사이드바의 [이용 내역] 페이지에서 확인하실 수 있습니다.\n"
+                    + "또 도와드릴까요? 😊"
                     + jsonData; // JSON 데이터를 텍스트에 포함
         }
 
@@ -154,7 +196,8 @@ public class BikeFlowHandler {
                 Map<String, Object> bookingRes = intentService.processIntent("bike_booking_step3", bookingReq);
 
                 String message = (String) bookingRes.get("message");
-                Integer bookingId = (Integer) bookingRes.get("bookingId");
+                Object bookingIdObj = bookingRes.get("bookingId");
+                String bookingId = bookingIdObj != null ? String.valueOf(bookingIdObj) : "unknown";
 
                 // ✅ 핵심 로직: message: "success" 응답 확인
                 if ("success".equals(message)) {
@@ -176,7 +219,8 @@ public class BikeFlowHandler {
 
     private Integer extractNumber(String input, int maxSize) {
         String digits = input.replaceAll("[^0-9]", "");
-        if (digits.isEmpty()) return null;
+        if (digits.isEmpty())
+            return null;
         int v = Integer.parseInt(digits);
         return (v >= 1 && v <= maxSize) ? v : null;
     }
@@ -212,11 +256,12 @@ public class BikeFlowHandler {
 
     /**
      * 사용자 전화번호 가져오기
-     * TODO: 실제 사용자 정보 조회 로직으로 변경 필요
      */
     private String getUserPhone(String userId) {
-        // 실제 구현에서는 userId를 사용하여 DB 또는 세션에서 조회해야 합니다.
-        // 현재는 임시 전화번호를 반환합니다.
-        return "01012345678"; // 하이픈 없이 11자리
+        MemberDTO member = userMapper.findById(userId);
+        if (member != null) {
+            return member.getPhoneNum();
+        }
+        return "01000000000"; // 기본값 (또는 예외 처리)
     }
 }
