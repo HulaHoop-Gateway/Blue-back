@@ -38,17 +38,20 @@ public class KakaoLocalService {
     // 0. 주소 전처리 및 키워드 추출
     // =========================================================
     private String normalizeAddress(String address) {
-        if (address == null) return null;
+        if (address == null)
+            return null;
         return address.trim().replaceAll("\\(.*?\\)", "").trim();
     }
 
     private String trimQueryLength(String q) {
-        if (q == null) return null;
+        if (q == null)
+            return null;
         return q.length() > 100 ? q.substring(0, 100) : q;
     }
 
     public String extractPlaceKeyword(String input) {
-        if (input == null) return null;
+        if (input == null)
+            return null;
         String regex = "(\\S+역)|(\\S+동)|(\\S+구)|(\\S+시)";
         Matcher m = Pattern.compile(regex).matcher(input);
         return m.find() ? m.group() : null;
@@ -93,7 +96,8 @@ public class KakaoLocalService {
     // =========================================================
     private double[] searchByAddressAPI(String input) {
         try {
-            if (input == null || input.isBlank()) return null;
+            if (input == null || input.isBlank())
+                return null;
 
             // UriComponentsBuilder가 인코딩을 자동으로 처리합니다.
             URI uri = UriComponentsBuilder
@@ -104,13 +108,14 @@ public class KakaoLocalService {
                     .toUri();
 
             ResponseEntity<Map> response = callKakaoAPI(uri);
-            if (response == null || response.getBody() == null) return null;
+            if (response == null || response.getBody() == null)
+                return null;
 
             List<Map<String, Object>> docs = (List<Map<String, Object>>) response.getBody().get("documents");
 
             if (docs != null && !docs.isEmpty()) {
                 Map<String, Object> doc = docs.get(0);
-                return new double[]{
+                return new double[] {
                         Double.parseDouble(doc.get("y").toString()),
                         Double.parseDouble(doc.get("x").toString())
                 };
@@ -126,7 +131,8 @@ public class KakaoLocalService {
     // =========================================================
     private double[] searchByKeywordAPI(String input) {
         try {
-            if (input == null || input.isBlank()) return null;
+            if (input == null || input.isBlank())
+                return null;
 
             URI uri = UriComponentsBuilder
                     .fromUriString("https://dapi.kakao.com/v2/local/search/keyword.json")
@@ -136,13 +142,14 @@ public class KakaoLocalService {
                     .toUri();
 
             ResponseEntity<Map> response = callKakaoAPI(uri);
-            if (response == null || response.getBody() == null) return null;
+            if (response == null || response.getBody() == null)
+                return null;
 
             List<Map<String, Object>> docs = (List<Map<String, Object>>) response.getBody().get("documents");
 
             if (docs != null && !docs.isEmpty()) {
                 Map<String, Object> doc = docs.get(0);
-                return new double[]{
+                return new double[] {
                         Double.parseDouble(doc.get("y").toString()),
                         Double.parseDouble(doc.get("x").toString())
                 };
@@ -158,7 +165,8 @@ public class KakaoLocalService {
     // =========================================================
     private double[] searchStationAPI(String keyword) {
         try {
-            if (keyword == null || keyword.isBlank()) return null;
+            if (keyword == null || keyword.isBlank())
+                return null;
 
             URI uri = UriComponentsBuilder
                     .fromUriString("https://dapi.kakao.com/v2/local/search/keyword.json")
@@ -169,13 +177,14 @@ public class KakaoLocalService {
                     .toUri();
 
             ResponseEntity<Map> response = callKakaoAPI(uri);
-            if (response == null || response.getBody() == null) return null;
+            if (response == null || response.getBody() == null)
+                return null;
 
             List<Map<String, Object>> docs = (List<Map<String, Object>>) response.getBody().get("documents");
 
             if (docs != null && !docs.isEmpty()) {
                 Map<String, Object> doc = docs.get(0);
-                return new double[]{
+                return new double[] {
                         Double.parseDouble(doc.get("y").toString()),
                         Double.parseDouble(doc.get("x").toString())
                 };
@@ -190,7 +199,8 @@ public class KakaoLocalService {
     // 5. 통합 좌표 검색 (Main Entry)
     // =========================================================
     public Map<String, Object> searchCoordinate(String input) {
-        if (input == null || input.isBlank()) return null;
+        if (input == null || input.isBlank())
+            return null;
 
         System.out.println("\n⭐ 좌표 검색 시작: " + input);
 
@@ -241,16 +251,15 @@ public class KakaoLocalService {
         double dLon = Math.toRadians(lon2 - lon1);
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
                 + Math.cos(Math.toRadians(lat1))
-                * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon / 2)
-                * Math.sin(dLon / 2);
+                        * Math.cos(Math.toRadians(lat2))
+                        * Math.sin(dLon / 2)
+                        * Math.sin(dLon / 2);
         return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     }
 
     public List<Map<String, Object>> sortCinemasByDistance(
             Map<String, Object> basisCoord,
-            List<Map<String, Object>> cinemas
-    ) {
+            List<Map<String, Object>> cinemas) {
         if (basisCoord == null || cinemas == null || cinemas.isEmpty()) {
             return cinemas;
         }
@@ -272,12 +281,50 @@ public class KakaoLocalService {
 
             double dist = calculateDistance(userLat, userLng, cinemaCoord[0], cinemaCoord[1]);
             cinema.put("distance", Math.round(dist * 100) / 100.0); // 소수점 2자리 반올림
+
+            // ✅ 좌표를 cinema 객체에 추가 (지도 표시용)
+            cinema.put("latitude", cinemaCoord[0]);
+            cinema.put("longitude", cinemaCoord[1]);
         }
 
         cinemas.sort(Comparator.comparingDouble(
-                c -> Double.parseDouble(c.get("distance").toString())
-        ));
+                c -> Double.parseDouble(c.get("distance").toString())));
 
         return cinemas;
+    }
+
+    public List<Map<String, Object>> sortBikesByDistance(
+            Map<String, Object> basisCoord,
+            List<Map<String, Object>> bikes) {
+        if (basisCoord == null || bikes == null || bikes.isEmpty()) {
+            return bikes;
+        }
+
+        double userLat = (double) basisCoord.get("lat");
+        double userLng = (double) basisCoord.get("lng");
+
+        for (Map<String, Object> bike : bikes) {
+            // 자전거는 이미 latitude, longitude 필드를 가지고 있음
+            Object latObj = bike.get("latitude");
+            Object lngObj = bike.get("longitude");
+
+            if (latObj == null || lngObj == null) {
+                bike.put("distance", 9999.0);
+                continue;
+            }
+
+            double bikeLat = (latObj instanceof Number) ? ((Number) latObj).doubleValue()
+                    : Double.parseDouble(latObj.toString());
+            double bikeLng = (lngObj instanceof Number) ? ((Number) lngObj).doubleValue()
+                    : Double.parseDouble(lngObj.toString());
+
+            double dist = calculateDistance(userLat, userLng, bikeLat, bikeLng);
+            bike.put("distance", Math.round(dist * 100) / 100.0);
+        }
+
+        bikes.sort(Comparator.comparingDouble(
+                b -> Double.parseDouble(b.get("distance").toString())));
+
+        return bikes;
     }
 }

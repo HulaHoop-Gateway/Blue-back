@@ -36,7 +36,8 @@ public class MovieCancelHandler {
 
         // 회원 정보 조회
         MemberDTO member = userMapper.findById(userId);
-        if (member == null) return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
+        if (member == null)
+            return "❌ 회원 정보를 찾을 수 없습니다. 로그인 상태를 확인해주세요.";
 
         String phoneNumber = member.getPhoneNum();
         if (phoneNumber == null || phoneNumber.isBlank()) {
@@ -71,7 +72,7 @@ public class MovieCancelHandler {
 
         // 3️⃣ 취소 거절
         if (currentState.equals("awaiting_confirmation") &&
-                List.of("아니오","취소","안할래","그만","아니","안돼").stream()
+                List.of("아니오", "취소", "안할래", "그만", "아니", "안돼").stream()
                         .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
 
             userState.remove(userId);
@@ -81,7 +82,7 @@ public class MovieCancelHandler {
 
         // 4️⃣ 취소 확정
         if (currentState.equals("awaiting_confirmation") &&
-                List.of("네","예","응","그래","좋아","ㅇㅇ","오케이").stream()
+                List.of("네", "예", "응", "그래", "좋아", "ㅇㅇ", "오케이").stream()
                         .anyMatch(p -> p.equalsIgnoreCase(userInput))) {
 
             String reservationNum = selectedReservation.get(userId);
@@ -99,14 +100,14 @@ public class MovieCancelHandler {
     }
 
     /**
-     * 취소 가능한 예매 목록을 이쁘게 출력하는 Formatter
+     * 취소 가능한 예매 목록을 이쁘게 출력하는 Formatter (그룹화 지원)
      */
     private String buildResponse(Map<String, Object> res, String header, boolean showPrompt) {
 
-        if (res.containsKey("message")) return res.get("message").toString();
+        if (res.containsKey("message"))
+            return res.get("message").toString();
 
-        List<Map<String, Object>> reservations =
-                (List<Map<String, Object>>) res.get("reservations");
+        List<Map<String, Object>> reservations = (List<Map<String, Object>>) res.get("reservations");
 
         if (reservations == null || reservations.isEmpty()) {
             return "📭 취소 가능한 예매 내역이 없습니다.";
@@ -115,11 +116,29 @@ public class MovieCancelHandler {
         StringBuilder sb = new StringBuilder(header);
 
         for (Map<String, Object> r : reservations) {
+            String bookingGroupId = (String) r.get("bookingGroupId");
+            Object seatLabelsObj = r.get("seatLabels");
+
+            // 좌석 표시 (그룹화 지원)
+            String seatDisplay;
+            if (seatLabelsObj instanceof List) {
+                List<String> seatLabels = (List<String>) seatLabelsObj;
+                seatDisplay = String.join(", ", seatLabels);
+            } else {
+                seatDisplay = String.valueOf(r.get("seat"));
+            }
+
+            // 그룹 표시 (여러 좌석인 경우 개수 표시)
+            String groupIndicator = "";
+            if (seatLabelsObj instanceof List && ((List<?>) seatLabelsObj).size() > 1) {
+                groupIndicator = " (총 " + ((List<?>) seatLabelsObj).size() + "석)";
+            }
+
             sb.append("🎟️ ")
                     .append(r.get("movieTitle")).append(" / ")
                     .append(r.get("screeningDate")).append(" / ")
                     .append(r.get("branchName")).append(" / ")
-                    .append("좌석 ").append(r.get("seat")).append(" / ")
+                    .append("좌석 ").append(seatDisplay).append(groupIndicator).append(" / ")
                     .append("번호: ").append(r.get("reservationNum"))
                     .append("\n");
         }
