@@ -2,6 +2,7 @@ package com.hulahoop.blueback.ai.model.service.movie;
 
 import com.hulahoop.blueback.ai.model.service.IntentService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
+import com.hulahoop.blueback.email.model.service.EmailService;
 import com.hulahoop.blueback.kakao.model.service.KakaoLocalService;
 import com.hulahoop.blueback.member.model.dao.UserMapper;
 import com.hulahoop.blueback.member.model.dto.MemberDTO;
@@ -16,16 +17,19 @@ public class MovieBookingFlowHandler {
     private final MovieFormatter formatter;
     private final UserMapper userMapper;
     private final KakaoLocalService kakaoLocalService;
+    private final EmailService emailService;
 
     public MovieBookingFlowHandler(
             IntentService intentService,
             MovieFormatter formatter,
             UserMapper userMapper,
-            KakaoLocalService kakaoLocalService) {
+            KakaoLocalService kakaoLocalService,
+            EmailService emailService) {
         this.intentService = intentService;
         this.formatter = formatter;
         this.userMapper = userMapper;
         this.kakaoLocalService = kakaoLocalService;
+        this.emailService = emailService;
     }
 
     @SuppressWarnings("unchecked")
@@ -308,7 +312,7 @@ public class MovieBookingFlowHandler {
             // 다음 단계로 변경 (결제 대기)
             s.setStep(UserSession.Step.MOVIE_PAYMENT_CONFIRM);
 
-            return "🎬 영화 예매가 완료되었습니다!\n\n"
+            return " 좌석 선택이 완료되었습니다!\n\n"
                     + "선택한 좌석: " + String.join(", ", seatLabels) + "\n"
                     + "총 금액: " + totalAmount + "원\n"
                     + jsonData; // JSON 데이터를 텍스트에 포함
@@ -369,6 +373,32 @@ public class MovieBookingFlowHandler {
                             "scheduleNum", scheduleNum,
                             "phoneNumber", phoneNumber,
                             "totalAmount", totalAmount));
+
+                    // 📧 이메일 알림 발송 (알림 동의한 사용자만)
+                    try {
+                        MemberDTO member = userMapper.findById(userId);
+                        if (member != null && "Y".equals(member.getNotificationStatus())) {
+                            String movieTitle = String.valueOf(s.getBookingContext().get("movieTitle"));
+                            String branchName = String.valueOf(s.getBookingContext().get("branchName"));
+                            @SuppressWarnings("unchecked")
+                            List<String> seatLabels = (List<String>) s.getBookingContext().get("seatLabels");
+                            String seats = String.join(", ", seatLabels);
+
+                            // 상영 시간 정보 (scheduleNum으로부터 조회하거나 기본값 사용)
+                            String showtime = s.getBookingContext().getOrDefault("showtime", "예약 내역에서 확인").toString();
+
+                            emailService.sendMovieReservationEmail(
+                                    member.getEmail(),
+                                    movieTitle,
+                                    showtime + " (" + branchName + ")",
+                                    seats,
+                                    totalAmount);
+                        }
+                    } catch (Exception e) {
+                        // 이메일 발송 실패해도 예약은 정상 완료
+                        java.util.logging.Logger.getLogger(getClass().getName())
+                                .warning("이메일 발송 실패: " + e.getMessage());
+                    }
 
                     s.reset();
                     String msg = "🎉 총 " + successCount + "개의 좌석 예매가 완료되었습니다!";

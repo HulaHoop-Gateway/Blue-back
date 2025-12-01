@@ -10,6 +10,7 @@
 
         <result property="memberName" column="member_name"/>
         <result property="merchantName" column="merchant_name"/>
+        <result property="merchantCode" column="merchant_code"/>
 
         <result property="amountUsed" column="amount_used"/>
         <result property="paymentDate" column="payment_date"/>
@@ -21,24 +22,50 @@
 
     <select id="findHistoryByMemberCode" resultMap="historyResultMap">
         SELECT
-        t.transaction_num,
-        m.name AS member_name,
-        mc.merchant_name AS merchant_name,
-        t.amount_used,
-        t.payment_date,
-        t.status,
-        t.start_date,
-        t.end_date
+            t.transaction_num,
+            m.name AS member_name,
+            mc.merchant_name AS merchant_name,
+            t.amount_used,
+            t.payment_date,
+            CASE
+                WHEN EXISTS (SELECT 1 FROM T_TransactionHistory cancel WHERE cancel.original_transaction_num = t.transaction_num) THEN 'R'
+                ELSE t.status
+            END AS status,
+            t.start_date,
+            t.end_date
         FROM T_TransactionHistory t
         JOIN T_Member m ON t.member_code = m.member_code
         JOIN T_Merchant mc ON t.merchant_code = mc.merchant_code
         WHERE
-        t.member_code = #{memberCode}
+            t.member_code = #{memberCode}
+            AND t.status != 'R' -- 취소 기록 자체는 제외 (원본 기록의 상태를 R로 변경해서 보여줌)
         <if test="status != null and status != ''">
-            AND t.status = #{status}
+            AND (
+                (#{status} = 'R' AND EXISTS (SELECT 1 FROM T_TransactionHistory cancel WHERE cancel.original_transaction_num = t.transaction_num))
+                OR
+                (#{status} != 'R' AND t.status = #{status} AND NOT EXISTS (SELECT 1 FROM T_TransactionHistory cancel WHERE cancel.original_transaction_num = t.transaction_num))
+            )
         </if>
         ORDER BY
-        t.payment_date DESC, t.transaction_num DESC
+            t.payment_date DESC, t.transaction_num DESC
+    </select>
+
+    <select id="findTransactionByNum" resultMap="historyResultMap">
+        SELECT
+            t.transaction_num,
+            m.name AS member_name,
+            mc.merchant_name AS merchant_name,
+            mc.merchant_code,
+            t.member_code,
+            t.amount_used,
+            t.payment_date,
+            t.status,
+            t.start_date,
+            t.end_date
+        FROM T_TransactionHistory t
+        JOIN T_Member m ON t.member_code = m.member_code
+        JOIN T_Merchant mc ON t.merchant_code = mc.merchant_code
+        WHERE t.transaction_num = #{transactionNum}
     </select>
 
 </mapper>

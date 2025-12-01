@@ -17,6 +17,7 @@ public class MemberController {
     public MemberController(MemberService memberService) {
         this.memberService = memberService;
     }
+
     @PostMapping("/signup")
     public ResponseEntity<?> registerMember(@RequestBody MemberDTO dto) {
         try {
@@ -37,6 +38,43 @@ public class MemberController {
         return ResponseEntity.ok(Map.of("available", available));
     }
 
+    // ✅ [추가] 이메일 중복 확인
+    @GetMapping("/check-email")
+    public ResponseEntity<?> checkEmail(@RequestParam String email) {
+        boolean available = memberService.isEmailAvailable(email);
+        return ResponseEntity.ok(Map.of("available", available));
+    }
+
+    // ✅ [추가] 전화번호 중복 확인
+    @GetMapping("/check-phone")
+    public ResponseEntity<?> checkPhone(@RequestParam String phoneNum) {
+        boolean available = memberService.isPhoneNumAvailable(phoneNum);
+        return ResponseEntity.ok(Map.of("available", available));
+    }
+
+    @PostMapping("/find-id")
+    public ResponseEntity<?> findId(@RequestBody Map<String, String> param) {
+        String name = param.get("name");
+        String email = param.get("email");
+        try {
+            String id = memberService.findIdByNameAndEmail(name, email);
+            return ResponseEntity.ok(Map.of("id", id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> param) {
+        String id = param.get("id");
+        String email = param.get("email");
+        try {
+            memberService.sendTempPassword(id, email);
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 
     // ✅ [2] 회원정보 조회 (로그인 필요)
     @GetMapping("/info")
@@ -75,6 +113,27 @@ public class MemberController {
             return ResponseEntity.ok("회원정보 수정 완료");
         } catch (Exception e) {
             return ResponseEntity.status(500).body("회원정보 수정 실패: " + e.getMessage());
+        }
+    }
+
+    // ✅ [3-1] 비밀번호 변경
+    @PatchMapping("/update-password")
+    public ResponseEntity<?> updatePassword(@RequestBody Map<String, String> param, Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
+        }
+
+        String id = authentication.getName();
+        String currentPwd = param.get("currentPassword");
+        String newPwd = param.get("newPassword");
+
+        try {
+            memberService.changePassword(id, currentPwd, newPwd);
+            return ResponseEntity.ok("비밀번호 변경 완료");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("비밀번호 변경 중 오류가 발생했습니다.");
         }
     }
 

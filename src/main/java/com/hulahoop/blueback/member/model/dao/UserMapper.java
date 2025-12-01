@@ -21,7 +21,7 @@ public interface UserMapper {
 
     // ✅ SNS 알림 설정 변경
     int updateNotification(@Param("memberCode") String memberCode,
-                           @Param("status") String status);
+            @Param("status") String status);
 
     // ✅ 회원 탈퇴 (삭제 X → 플래그 변경)
     int withdrawMember(@Param("memberCode") String memberCode);
@@ -31,4 +31,15 @@ public interface UserMapper {
 
     // ✅ 마지막 회원 코드 조회
     String findLastMemberCode();
+
+    int countByEmail(@Param("email") String email);
+
+    int countByPhoneNum(@Param("phoneNum") String phoneNum);
+
+    MemberDTO findByNameAndEmail(@Param("name") String name, @Param("email") String email);
+
+    MemberDTO findByIdAndEmail(@Param("id") String id, @Param("email") String email);
+
+    // ✅ 비밀번호 변경
+    int updatePassword(@Param("memberCode") String memberCode, @Param("password") String password);
 }

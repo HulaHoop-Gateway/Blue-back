@@ -8,5 +8,8 @@ import java.util.List;
 
 @Mapper
 public interface HistoryMapper {
-    List<HistoryResponseDto> findHistoryByMemberCode(@Param("memberCode") String memberCode, @Param("status") String status);
+    List<HistoryResponseDto> findHistoryByMemberCode(@Param("memberCode") String memberCode,
+            @Param("status") String status);
+
+    HistoryResponseDto findTransactionByNum(@Param("transactionNum") Long transactionNum);
 }

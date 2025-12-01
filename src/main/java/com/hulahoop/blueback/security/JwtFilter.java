@@ -22,10 +22,16 @@ public class JwtFilter extends OncePerRequestFilter {
             "/api/login",
             "/api/member/signup",
             "/api/member/check-id",
-            "/api/payments",          // 결제 생성
+            "/api/member/check-email",
+            "/api/member/check-phone",
+            "/api/member/find-id",
+            "/api/member/reset-password",
+            "/api/payments",
             "/api/payments/create",
-            "/api/payments/confirm"   // 결제 승인 콜백
+            "/api/payments/confirm",
+            "/api/ai/reset"
     );
+
 
     public JwtFilter(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;

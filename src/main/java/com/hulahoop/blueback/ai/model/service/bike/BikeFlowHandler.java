@@ -2,6 +2,7 @@ package com.hulahoop.blueback.ai.model.service.bike;
 
 import com.hulahoop.blueback.ai.model.service.IntentService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
+import com.hulahoop.blueback.email.model.service.EmailService;
 import com.hulahoop.blueback.kakao.model.service.KakaoLocalService;
 import com.hulahoop.blueback.member.model.dao.UserMapper;
 import com.hulahoop.blueback.member.model.dto.MemberDTO;
@@ -19,13 +20,16 @@ public class BikeFlowHandler {
     private final IntentService intentService;
     private final KakaoLocalService kakaoLocalService;
     private final UserMapper userMapper;
+    private final EmailService emailService;
 
     public BikeFlowHandler(IntentService intentService,
             KakaoLocalService kakaoLocalService,
-            UserMapper userMapper) {
+            UserMapper userMapper,
+            EmailService emailService) {
         this.intentService = intentService;
         this.kakaoLocalService = kakaoLocalService;
         this.userMapper = userMapper;
+        this.emailService = emailService;
     }
 
     @SuppressWarnings("unchecked")
@@ -166,6 +170,7 @@ public class BikeFlowHandler {
             // 사용자 전화번호 가져오기
             String phone = getUserPhone(userId);
             session.getBookingContext().put("phoneNumber", phone); // Context에 저장
+            session.getBookingContext().put("amount", amount); // 금액도 Context에 저장 (이메일 발송용)
 
             // JSON 형식으로 결제 정보 및 액션 타입 포함
             String jsonData = String.format(
@@ -175,10 +180,10 @@ public class BikeFlowHandler {
             // 다음 단계로 변경 (결제 대기)
             session.setStep(UserSession.Step.BIKE_PAYMENT_CONFIRM);
 
-            return "🚲 자전거 예약이 완료되었습니다!\n\n"
-                    + "이용 시간: " + start + " ~ " + end + "\n\n"
-                    + "상세 내역은 사이드바의 [이용 내역] 페이지에서 확인하실 수 있습니다.\n"
-                    + "또 도와드릴까요? 😊"
+            return "🚲 자전거 선택이 완료되었습니다!\n\n"
+                    + "이용 시간: " + start + " ~ " + end + "\n"
+                    + "**총 결제 금액: " + String.format("%,d", amount) + "원**\n\n"
+                    + "아래 [결제하기] 버튼을 눌러 결제를 진행해주세요.\n\n"
                     + jsonData; // JSON 데이터를 텍스트에 포함
         }
 
@@ -201,10 +206,45 @@ public class BikeFlowHandler {
 
                 // ✅ 핵심 로직: message: "success" 응답 확인
                 if ("success".equals(message)) {
+
+                    // 📧 이메일 알림 발송 (알림 동의한 사용자만)
+                    try {
+                        MemberDTO member = userMapper.findById(userId);
+                        if (member != null && "Y".equals(member.getNotificationStatus())) {
+                            String bikeName = String.valueOf(session.getBookingContext().get("bicycleName"));
+                            String location = String.valueOf(session.getBookingContext().get("location"));
+
+                            // 대여 시간 정보 (세션에 String으로 저장됨)
+                            String startTime = String.valueOf(session.getBookingContext().get("startTime"));
+                            String endTime = String.valueOf(session.getBookingContext().get("endTime"));
+
+                            String rentalTime;
+                            if (startTime != null && !startTime.equals("null") && endTime != null
+                                    && !endTime.equals("null")) {
+                                rentalTime = startTime + " ~ " + endTime;
+                            } else {
+                                rentalTime = "예약 내역에서 확인";
+                            }
+
+                            int amount = Integer.parseInt(String.valueOf(session.getBookingContext().get("amount")));
+
+                            emailService.sendBikeReservationEmail(
+                                    member.getEmail(),
+                                    bikeName,
+                                    rentalTime,
+                                    location,
+                                    amount);
+                        }
+                    } catch (Exception e) {
+                        // 이메일 발송 실패해도 예약은 정상 완료
+                        java.util.logging.Logger.getLogger(getClass().getName())
+                                .warning("이메일 발송 실패: " + e.getMessage());
+                    }
+
                     session.reset(); // 예약 성공 시 세션 초기화
-                    return "🎉 자전거 예약이 성공적으로 완료되었습니다.\n"
-                            + "예약 번호: **" + bookingId + "**\n"
-                            + "즐거운 시간 되세요!";
+                    return "✅ **자전거 예약이 완료되었습니다!**\n\n"
+                            + "상세 내역은 사이드바의 [예약 내역] 페이지에서 확인하실 수 있습니다.\n"
+                            + "또 도와드릴까요? 😊";
                 } else {
                     session.reset(); // 예약 실패 시 세션 초기화 및 오류 처리
                     return "죄송합니다. 예약 과정에서 오류가 발생했습니다. 다시 시도해 주세요.";
