@@ -83,7 +83,6 @@ public class MovieFormatter {
             sb.append("*").append(String.join(",", aisleCols.stream().map(String::valueOf).toList()))
                     .append("열은 통로입니다.\n");
         }
-        sb.append("좌석 입력 예시: A2\n");
         return sb.toString();
     }
 

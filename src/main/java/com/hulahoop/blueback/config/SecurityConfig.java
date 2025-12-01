@@ -30,36 +30,43 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
+                // CORS / CSRF / 세션 설정
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
+                // 인가 규칙
                 .authorizeHttpRequests(auth -> auth
-                        // CORS preflight
+                        // ✅ CORS preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // 결제 API 공개 (중요)
+                        // ✅ 결제 관련 API는 비회원 접근 허용
                         .requestMatchers("/api/payments/**").permitAll()
 
-                        // 로그인 관련 공개
+                        // ✅ 로그인/회원가입/아이디·비번 찾기/중복체크 등 비회원 접근 허용
                         .requestMatchers(
                                 "/api/login",
                                 "/api/member/signup",
-                                "/api/member/check-id"
+                                "/api/member/check-id",
+                                "/api/member/check-email",
+                                "/api/member/check-phone",
+                                "/api/member/find-id",
+                                "/api/member/reset-password",
+                                "/api/ai/reset"
                         ).permitAll()
 
-                        .requestMatchers("/api/ai/reset").permitAll()
-
-                        // 나머지는 JWT 인증 필요
+                        // ✅ 그 외 모든 요청은 JWT 인증 필요
                         .anyRequest().authenticated()
                 )
 
+                // 폼 로그인 사용 안 함 (JWT 방식)
                 .formLogin(form -> form.disable())
+
+                // ✅ UsernamePasswordAuthenticationFilter 앞에 JWT 필터 추가
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
@@ -75,17 +82,20 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of("http://localhost:5173","http://localhost:3000"));
+        // 프론트 도메인 허용
+        config.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
 
-        // 🔥 프론트 axios withCredentials:true 와 한쌍
+        // axiosInstance 에서 withCredentials: true 쓸 때 필요
         config.setAllowCredentials(true);
 
+        // 클라이언트로 노출할 헤더
         config.setExposedHeaders(List.of("Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
+
         return source;
     }
 }

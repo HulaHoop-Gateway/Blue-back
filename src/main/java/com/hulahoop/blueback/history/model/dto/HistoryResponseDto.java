@@ -7,7 +7,9 @@ public class HistoryResponseDto {
 
     private Long transactionNum;
     private String memberName;
+    private String memberCode;
     private String merchantName;
+    private String merchantCode;
     private BigDecimal amountUsed;
     private LocalDate paymentDate;
     private String status;
@@ -25,8 +27,7 @@ public class HistoryResponseDto {
             LocalDate paymentDate,
             String status,
             LocalDate startDate,
-            LocalDate endDate
-    ) {
+            LocalDate endDate) {
         this.transactionNum = transactionNum;
         this.memberName = memberName;
         this.merchantName = merchantName;
@@ -59,6 +60,22 @@ public class HistoryResponseDto {
 
     public void setMerchantName(String merchantName) {
         this.merchantName = merchantName;
+    }
+
+    public String getMerchantCode() {
+        return merchantCode;
+    }
+
+    public void setMerchantCode(String merchantCode) {
+        this.merchantCode = merchantCode;
+    }
+
+    public String getMemberCode() {
+        return memberCode;
+    }
+
+    public void setMemberCode(String memberCode) {
+        this.memberCode = memberCode;
     }
 
     public BigDecimal getAmountUsed() {
@@ -99,5 +116,21 @@ public class HistoryResponseDto {
 
     public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
+    }
+
+    @Override
+    public String toString() {
+        return "HistoryResponseDto{" +
+                "transactionNum=" + transactionNum +
+                ", memberName='" + memberName + '\'' +
+                ", memberCode='" + memberCode + '\'' +
+                ", merchantName='" + merchantName + '\'' +
+                ", merchantCode='" + merchantCode + '\'' +
+                ", amountUsed=" + amountUsed +
+                ", paymentDate=" + paymentDate +
+                ", status='" + status + '\'' +
+                ", startDate=" + startDate +
+                ", endDate=" + endDate +
+                '}';
     }
 }

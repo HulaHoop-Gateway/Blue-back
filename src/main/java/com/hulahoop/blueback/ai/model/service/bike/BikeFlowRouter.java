@@ -1,5 +1,6 @@
 package com.hulahoop.blueback.ai.model.service.bike;
 
+import com.hulahoop.blueback.ai.model.service.MembershipVerificationService;
 import com.hulahoop.blueback.ai.model.service.session.UserSession;
 import org.springframework.stereotype.Component;
 
@@ -7,11 +8,13 @@ import org.springframework.stereotype.Component;
 public class BikeFlowRouter {
 
     private final BikeFlowHandler bikeFlowHandler;
+    private final MembershipVerificationService membershipVerificationService;
 
-    public BikeFlowRouter(BikeFlowHandler bikeFlowHandler) {
+    public BikeFlowRouter(BikeFlowHandler bikeFlowHandler,
+            MembershipVerificationService membershipVerificationService) {
         this.bikeFlowHandler = bikeFlowHandler;
+        this.membershipVerificationService = membershipVerificationService;
     }
-
 
     public String handle(String userInput, UserSession session, String userId) {
 
@@ -34,6 +37,17 @@ public class BikeFlowRouter {
 
         // 최초 진입 조건
         if (containsBikeKeyword(lower)) {
+            // 🔹 자전거 회원 검증
+            String phoneNumber = membershipVerificationService.getUserPhoneNumber(userId);
+            if (phoneNumber == null) {
+                return "회원 정보를 찾을 수 없습니다.";
+            }
+
+            if (!membershipVerificationService.isBikeMember(phoneNumber)) {
+                return "❌ 죄송합니다. 자전거 대여 서비스에 가입되지 않은 회원입니다.\n" +
+                        "먼저 자전거 대여 앱에서 회원가입을 진행해주세요.";
+            }
+
             return bikeFlowHandler.handle(userInput, session, userId);
         }
 
