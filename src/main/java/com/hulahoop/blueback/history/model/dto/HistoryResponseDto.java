@@ -2,6 +2,7 @@ package com.hulahoop.blueback.history.model.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class HistoryResponseDto {
 
@@ -13,8 +14,8 @@ public class HistoryResponseDto {
     private BigDecimal amountUsed;
     private LocalDate paymentDate;
     private String status;
-    private LocalDate startDate;
-    private LocalDate endDate;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
 
     public HistoryResponseDto() {
     }
@@ -26,8 +27,8 @@ public class HistoryResponseDto {
             BigDecimal amountUsed,
             LocalDate paymentDate,
             String status,
-            LocalDate startDate,
-            LocalDate endDate) {
+            LocalDateTime startDate,
+            LocalDateTime endDate) {
         this.transactionNum = transactionNum;
         this.memberName = memberName;
         this.merchantName = merchantName;
@@ -102,19 +103,19 @@ public class HistoryResponseDto {
         this.status = status;
     }
 
-    public LocalDate getStartDate() {
+    public LocalDateTime getStartDate() {
         return startDate;
     }
 
-    public void setStartDate(LocalDate startDate) {
+    public void setStartDate(LocalDateTime startDate) {
         this.startDate = startDate;
     }
 
-    public LocalDate getEndDate() {
+    public LocalDateTime getEndDate() {
         return endDate;
     }
 
-    public void setEndDate(LocalDate endDate) {
+    public void setEndDate(LocalDateTime endDate) {
         this.endDate = endDate;
     }
 

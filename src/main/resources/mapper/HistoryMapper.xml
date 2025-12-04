@@ -68,4 +68,17 @@
         WHERE t.transaction_num = #{transactionNum}
     </select>
 
+    <update id="updatePendingToSuccess">
+        UPDATE T_TransactionHistory
+        SET status = 'S'
+        WHERE status = 'P'
+          AND start_date &lt;= NOW()
+    </update>
+
+    <select id="findRecentTransactions" resultMap="historyResultMap">
+        SELECT * FROM T_TransactionHistory
+        ORDER BY transaction_num DESC
+        LIMIT 5
+    </select>
+
 </mapper>

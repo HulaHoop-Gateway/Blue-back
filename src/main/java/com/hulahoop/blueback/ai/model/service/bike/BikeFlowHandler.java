@@ -211,8 +211,16 @@ public class BikeFlowHandler {
                     try {
                         MemberDTO member = userMapper.findById(userId);
                         if (member != null && "Y".equals(member.getNotificationStatus())) {
-                            String bikeName = String.valueOf(session.getBookingContext().get("bicycleName"));
-                            String location = String.valueOf(session.getBookingContext().get("location"));
+                            // 자전거 정보 (세션에 저장된 실제 키 사용)
+                            String bicycleCode = String.valueOf(session.getBookingContext().get("bicycleCode"));
+                            String bicycleType = String.valueOf(session.getBookingContext().get("bicycleType"));
+
+                            // 자전거 이름 구성: "타입 (코드)"
+                            String bikeName = bicycleType + " (" + bicycleCode + ")";
+
+                            // 대여 지점은 bicycleCode나 다른 정보에서 유추
+                            // 또는 기본값 사용 (추후 세션에 저장하도록 수정 가능)
+                            String location = "대여 지점 정보는 예약 내역에서 확인";
 
                             // 대여 시간 정보 (세션에 String으로 저장됨)
                             String startTime = String.valueOf(session.getBookingContext().get("startTime"));

@@ -12,4 +12,8 @@ public interface HistoryMapper {
             @Param("status") String status);
 
     HistoryResponseDto findTransactionByNum(@Param("transactionNum") Long transactionNum);
+
+    int updatePendingToSuccess();
+
+    List<HistoryResponseDto> findRecentTransactions();
 }
