@@ -8,9 +8,10 @@ import java.util.*;
 public class MovieFormatter {
 
     public String formatCinemas(List<Map<String, Object>> cinemas) {
-        if (cinemas == null || cinemas.isEmpty()) return "영화관 정보가 없습니다.";
+        if (cinemas == null || cinemas.isEmpty())
+            return "영화관 정보가 없습니다.";
 
-        StringBuilder sb = new StringBuilder("📍 가까운 영화관 목록\n\n");
+        StringBuilder sb = new StringBuilder("가까운 영화관 목록\n\n");
         int i = 1;
         for (Map<String, Object> cinema : cinemas) {
 
@@ -21,14 +22,15 @@ public class MovieFormatter {
             sb.append(i++).append(") ")
                     .append(cinema.get("branch_name"))
                     .append(" - ").append(dist).append(" km\n")
-                    .append("   📍 주소: ").append(cinema.get("address"))
+                    .append("   주소: ").append(cinema.get("address"))
                     .append(" (지점코드: ").append(cinema.get("branch_num")).append(")\n\n");
         }
         return sb.toString();
     }
 
     public String formatSchedules(List<Map<String, Object>> schedules) {
-        if (schedules == null || schedules.isEmpty()) return "상영 스케줄이 없습니다.";
+        if (schedules == null || schedules.isEmpty())
+            return "상영 스케줄이 없습니다.";
 
         StringBuilder sb = new StringBuilder("[상영 스케줄 목록]\n\n");
         int i = 1;
@@ -42,8 +44,11 @@ public class MovieFormatter {
         return sb.toString();
     }
 
+    // 좌석 배치를 텍스트로 표현 - 예약된 좌석은 [X], 가능한 좌석은 [O]로 표시
+    // 통로 좌석(is_aisle=1)은 공백 처리해서 시각적으로 구분
     public String formatSeats(List<Map<String, Object>> seats) {
-        if (seats == null || seats.isEmpty()) return "좌석 정보가 없습니다.";
+        if (seats == null || seats.isEmpty())
+            return "좌석 정보가 없습니다.";
 
         StringBuilder sb = new StringBuilder();
         Map<String, List<Map<String, Object>>> rows = new TreeMap<>();
@@ -59,9 +64,8 @@ public class MovieFormatter {
             }
         }
 
-        rows.values().forEach(rowSeats ->
-                rowSeats.sort(Comparator.comparingInt(s -> Integer.parseInt(String.valueOf(s.get("col_num")))))
-        );
+        rows.values().forEach(rowSeats -> rowSeats
+                .sort(Comparator.comparingInt(s -> Integer.parseInt(String.valueOf(s.get("col_num"))))));
 
         for (String row : rows.keySet()) {
             sb.append(row).append(" | ");
@@ -72,13 +76,14 @@ public class MovieFormatter {
                 if (isAisle == 1) {
                     sb.append("   ");
                 } else {
-                    sb.append(reserved ? "🟥" : "🟩").append(" ");
+                    // 텍스트 기반으로 예약 여부 표시 (이모지 대신 기호 사용)
+                    sb.append(reserved ? "[X]" : "[O]").append(" ");
                 }
             }
             sb.append("\n");
         }
 
-        sb.append("\n🟩 가능 / 🟥 예약됨\n");
+        sb.append("\n[O] 예약 가능 / [X] 예약됨\n");
         if (!aisleCols.isEmpty()) {
             sb.append("*").append(String.join(",", aisleCols.stream().map(String::valueOf).toList()))
                     .append("열은 통로입니다.\n");
@@ -90,11 +95,11 @@ public class MovieFormatter {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < reservations.size(); i++) {
             Map<String, Object> r = reservations.get(i);
-            sb.append("🔹 ").append(i + 1).append("번 예매\n")
-                    .append("🎬 영화: ").append(r.get("movieTitle")).append("\n")
-                    .append("🏢 지점: ").append(r.get("branchName")).append("\n")
-                    .append("📅 상영일시: ").append(r.get("screeningDate")).append("\n")
-                    .append("💺 좌석: ").append(r.get("seatLabel")).append("\n\n");
+            sb.append(i + 1).append("번 예매\n")
+                    .append("영화: ").append(r.get("movieTitle")).append("\n")
+                    .append("지점: ").append(r.get("branchName")).append("\n")
+                    .append("상영일시: ").append(r.get("screeningDate")).append("\n")
+                    .append("좌석: ").append(r.get("seatLabel")).append("\n\n");
         }
         return sb.toString();
     }

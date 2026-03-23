@@ -31,21 +31,22 @@ public class MemberController {
         }
     }
 
-    // ✅ [1] 아이디 중복 확인 (비회원 접근 허용)
+    // 아이디 중복 확인 - 회원가입 전에 입력한 아이디가 이미 있는지 확인
+    // 비회원도 호출 가능하도록 JwtFilter에서 PUBLIC_PATHS에 포함시켜둠
     @GetMapping("/check-id")
     public ResponseEntity<?> checkId(@RequestParam String id) {
         boolean available = memberService.isIdAvailable(id);
         return ResponseEntity.ok(Map.of("available", available));
     }
 
-    // ✅ [추가] 이메일 중복 확인
+    // 이메일 중복 확인
     @GetMapping("/check-email")
     public ResponseEntity<?> checkEmail(@RequestParam String email) {
         boolean available = memberService.isEmailAvailable(email);
         return ResponseEntity.ok(Map.of("available", available));
     }
 
-    // ✅ [추가] 전화번호 중복 확인
+    // 전화번호 중복 확인
     @GetMapping("/check-phone")
     public ResponseEntity<?> checkPhone(@RequestParam String phoneNum) {
         boolean available = memberService.isPhoneNumAvailable(phoneNum);
@@ -76,7 +77,8 @@ public class MemberController {
         }
     }
 
-    // ✅ [2] 회원정보 조회 (로그인 필요)
+    // 내 정보 조회 - JWT 토큰에서 꺼낸 사용자 아이디로 DB 조회
+    // Authentication 객체는 JwtFilter에서 SecurityContext에 넣어준 값이 자동으로 주입됨
     @GetMapping("/info")
     public ResponseEntity<?> getMemberInfo(Authentication authentication) {
         if (authentication == null) {
@@ -94,7 +96,8 @@ public class MemberController {
         return ResponseEntity.ok(member);
     }
 
-    // ✅ [3] 회원정보 수정
+    // 회원정보 수정 - 수정 전에 기존 memberCode를 조회해서 dto에 세팅해줘야 함
+    // id는 토큰에서 꺼내 쓰고, 클라이언트에서 받은 id 값은 신뢰하지 않는 구조
     @PatchMapping("/update")
     public ResponseEntity<?> updateMember(@RequestBody MemberDTO dto, Authentication authentication) {
         if (authentication == null) {
@@ -116,7 +119,7 @@ public class MemberController {
         }
     }
 
-    // ✅ [3-1] 비밀번호 변경
+    // 비밀번호 변경 - 현재 비밀번호를 먼저 확인한 다음 새 비밀번호로 교체
     @PatchMapping("/update-password")
     public ResponseEntity<?> updatePassword(@RequestBody Map<String, String> param, Authentication authentication) {
         if (authentication == null) {
@@ -137,7 +140,7 @@ public class MemberController {
         }
     }
 
-    // ✅ [4] 회원 탈퇴
+    // 회원 탈퇴 - 실제 삭제가 아니라 member_yn 컬럼을 'N'으로 바꾸는 소프트 딜리트 방식
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteMember(Authentication authentication) {
         if (authentication == null) {
