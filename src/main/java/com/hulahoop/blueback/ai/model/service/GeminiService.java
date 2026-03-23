@@ -21,6 +21,7 @@ public class GeminiService {
     private final MovieFlowRouter movieFlowRouter;
     private final BikeFlowRouter bikeFlowRouter;
 
+    // userId별로 대화 세션을 메모리에 저장 - 서버 재시작하면 초기화됨
     private final Map<String, UserSession> userSessions = new HashMap<>();
 
     @Value("${gemini.api.key}")
@@ -34,6 +35,7 @@ public class GeminiService {
         this.bikeFlowRouter = bikeFlowRouter;
     }
 
+    // synchronized - 같은 사용자가 동시에 두 번 요청할 경우 세션 꼬임 방지
     public synchronized AiResponseDTO askGemini(String prompt, String userId) {
 
         if (userId == null || userId.isBlank()) {
@@ -43,6 +45,7 @@ public class GeminiService {
         userSessions.putIfAbsent(userId, new UserSession());
         UserSession session = userSessions.get(userId);
 
+        // 대화 히스토리에 사용자 메시지 추가 (Gemini API 포맷에 맞춰서)
         session.getHistory().add(Map.of("role", "user", "parts", List.of(Map.of("text", prompt))));
 
         LocalDate parsedDate = extractDateFromText(prompt);
@@ -50,7 +53,7 @@ public class GeminiService {
 
         String lower = prompt.toLowerCase().trim();
 
-        // ✅ 0) 영화 취소 플로우 우선 처리
+        // 취소 플로우가 진행 중이면 우선 처리 (다른 키워드보다 먼저)
         if (movieFlowRouter.isInCancelFlow(userId)) {
             String result = movieFlowRouter.handle(prompt, session, userId);
             AiResponseDTO response = new AiResponseDTO(result);
@@ -60,10 +63,10 @@ public class GeminiService {
             return response;
         }
 
-        // ✅ 1) 이미 진행 중인 상태 유지
+        // 이미 진행 중인 플로우가 있으면 계속 이어서 처리
         if (session.getStep() != UserSession.Step.IDLE) {
 
-            // ✅ 세션이 유지되는데 flowType이 사라졌다면 자동 복구
+            // 세션은 살아있는데 flowType이 NONE이면 히스토리 보고 복구
             if (session.getFlowType() == UserSession.FlowType.NONE) {
                 if (session.getLastCinemas() != null && !session.getLastCinemas().isEmpty()) {
                     session.setFlowType(UserSession.FlowType.MOVIE);
@@ -91,15 +94,13 @@ public class GeminiService {
             }
         }
 
-        // ✅ 2) 종료 의도
+        // 종료/취소 의도 감지 - 세션 리셋
         if (isCancelIntent(prompt)) {
             session.reset();
             return new AiResponseDTO("대화를 종료했습니다. 필요하시면 다시 말씀해주세요.");
         }
 
-        // ✅ 3) 명확한 구문 우선 처리
-
-        // 영화 예약 확정 표현
+        // 명확한 구문 우선 처리 - "영화 예약", "자전거 예약" 같은 직접 표현
         if (lower.contains("영화 예약") || lower.contains("영화 예매")) {
             session.setFlowType(UserSession.FlowType.MOVIE);
             String result = movieFlowRouter.handle(prompt, session, userId);
@@ -110,7 +111,6 @@ public class GeminiService {
             return response;
         }
 
-        // 자전거 예약 확정 표현
         if (lower.contains("자전거 예약") ||
                 lower.contains("따릉이 예약") ||
                 lower.contains("바이크 예약")) {
@@ -123,14 +123,14 @@ public class GeminiService {
             return response;
         }
 
-        // ✅ 4) 단독 "예약" 입력 — 흐름 시작 금지
+        // "예약" 단어만 단독으로 들어오면 어떤 예약인지 되물어봄 (흐름 시작 방지)
         if (lower.equals("예약")) {
             return new AiResponseDTO(
                     "어떤 예약을 도와드릴까요?\n\n" +
-                            "🎬 영화 예매\n🚲 자전거 대여\n\n말씀해주세요!");
+                            "영화 예매\n자전거 대여\n\n말씀해주세요!");
         }
 
-        // ✅ 5) 일반 키워드 기반 진입 (충돌 없이)
+        // 키워드 기반 플로우 진입 - 명확한 구문이 없을 때
         if (containsAny(lower, List.of("자전거", "따릉이", "바이크", "전기자전거"))) {
             session.setFlowType(UserSession.FlowType.BIKE);
             String result = bikeFlowRouter.handle(prompt, session, userId);
@@ -152,7 +152,7 @@ public class GeminiService {
             return response;
         }
 
-        // ✅ 6) 자유 대화 모드
+        // 특정 도메인에 해당하지 않으면 Gemini에게 직접 자유 대화로 위임
         return callGeminiFreeChat(session.getHistory());
     }
 
@@ -168,6 +168,7 @@ public class GeminiService {
         if (text.contains("모레"))
             return today.plusDays(2);
 
+        // "N월 N일" 형식이 있으면 파싱해서 날짜로 변환
         Pattern p = Pattern.compile("(\\d{1,2})월\\s*(\\d{1,2})일");
         Matcher m = p.matcher(text);
 
@@ -180,6 +181,7 @@ public class GeminiService {
         return today;
     }
 
+    // Gemini API에 대화 히스토리를 그대로 넘겨서 자유 대화 처리
     private AiResponseDTO callGeminiFreeChat(List<Map<String, Object>> history) {
         Map<String, Object> req = Map.of("contents", history);
         HttpHeaders headers = new HttpHeaders();
@@ -201,6 +203,7 @@ public class GeminiService {
             List<Map<String, String>> parts = (List<Map<String, String>>) content.get("parts");
             String text = parts.get(0).get("text");
 
+            // AI 응답도 히스토리에 추가해서 다음 요청 때 맥락 유지
             history.add(Map.of("role", "model", "parts", List.of(Map.of("text", text))));
             return new AiResponseDTO(text);
 
@@ -209,6 +212,7 @@ public class GeminiService {
         }
     }
 
+    // "그만", "취소", "종료" 같은 명시적 종료 표현만 감지 - 부분 매칭 방지를 위해 equals 사용
     private boolean isCancelIntent(String text) {
         if (text == null)
             return false;
