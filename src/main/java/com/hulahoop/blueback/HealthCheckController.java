@@ -9,7 +9,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * ✅ /health 엔드포인트: AI/Frontend 서버 (8090) 헬스체크
+ *  /health 엔드포인트: AI/Frontend 서버 (8090) 헬스체크
  */
 @RestController
 public class HealthCheckController {

@@ -3,9 +3,16 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
+<!-- 
+    UserMapper.java 인터페이스랑 매핑되는 SQL 보관소
+-->
 <mapper namespace="com.hulahoop.blueback.member.model.dao.UserMapper">
 
-    <!-- ID로 회원 조회 -->
+    <!-- 
+        ID 기반 회원 단건 조회
+        로그인할 때 입력한 아이디 넣어서 비밀번호 검증용으로 꺼내올 때 사용함.
+        * member_yn = 'Y' -> 탈퇴 안 한 사람만 찾겠다는 전제조건.
+    -->
     <select id="findById" parameterType="string" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT *
         FROM T_Member
@@ -13,7 +20,10 @@
         AND member_yn = 'Y'
     </select>
 
-    <!-- 회원 코드로 회원 조회 -->
+    <!-- 
+        회원 코드(고유키) 기반 회원 조회
+        토큰 파싱하고 나서나, 시스템끼리 내부 통신할 때는 절대 안 바뀌는 고유값(member_code) 기준으로 회원을 찾음.
+    -->
     <select id="findByMemberCode" parameterType="string" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT *
         FROM T_Member
@@ -21,32 +31,43 @@
         AND member_yn = 'Y'
     </select>
 
-    <!-- 회원 등록 -->
+    <!-- 
+        신규 회원 가입 (INSERT)
+        DTO 프론트에서 받은 거 까서 파라미터 매핑(#{변수명}) 시켜줌.
+        이렇게 바인딩하면 내부적으로 PreparedStatement 형태로 전환돼서 SQL Injection 해킹 공격을 방어할 수 있음.
+        만들어질 때 활성화 여부(member_yn)는 일단 무조건 'Y' 박아둠.
+    -->
     <insert id="insertMember" parameterType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         INSERT INTO T_Member (
-        member_code, name, id, password,
-        phone_num, email, address,
-        user_type, notification_status, member_yn
+            member_code, name, id, password,
+            phone_num, email, address,
+            user_type, notification_status, member_yn
         ) VALUES (
-        #{memberCode}, #{name}, #{id}, #{password},
-        #{phoneNum}, #{email}, #{address},
-        #{userType}, #{notificationStatus}, 'Y'
+            #{memberCode}, #{name}, #{id}, #{password},
+            #{phoneNum}, #{email}, #{address},
+            #{userType}, #{notificationStatus}, 'Y'
         )
     </insert>
 
-    <!-- 회원 정보 수정 -->
+    <!-- 
+        내 정보 개별 수정
+        마이페이지에서 넘어온 데이터만 갱신처리. 전화번호, 이메일, 주소, 알림 설정만 변경함.
+    -->
     <update id="updateMember" parameterType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         UPDATE T_Member
         SET
-        phone_num = #{phoneNum},
-        email = #{email},
-        address = #{address},
-        notification_status = #{notificationStatus}
+            phone_num = #{phoneNum},
+            email = #{email},
+            address = #{address},
+            notification_status = #{notificationStatus}
         WHERE member_code = #{memberCode}
         AND member_yn = 'Y'
     </update>
 
-    <!-- SNS 알림 설정 변경 -->
+    <!-- 
+        이메일/SNS 알림 여부 토글
+        위 쿼리랑 따로 분리해서 환경설정 체크박스 딸깍용으로 씀.
+    -->
     <update id="updateNotification">
         UPDATE T_Member
         SET notification_status = #{status}
@@ -54,7 +75,10 @@
         AND member_yn = 'Y'
     </update>
 
-    <!-- 비밀번호 변경 -->
+    <!-- 
+        비밀번호 갱신
+        비번 까먹었을 때 임시번호 박아주거나 직접 바꿀 때, 암호화된 새 비번으로 덮어씀.
+    -->
     <update id="updatePassword">
         UPDATE T_Member
         SET password = #{password}
@@ -62,14 +86,21 @@
         AND member_yn = 'Y'
     </update>
 
-    <!-- 회원 탈퇴 (삭제 X → 비활성 플래그 변경) -->
+    <!-- 
+        논리 삭제 (소프트 딜리트) 기반 회원 비활성화
+        탈퇴시켰다고 DELETE 갈기면 딴 데서 참조하는 데이터(결제 내역 등) 다 고아 데이터 되고 터짐.
+        그래서 삭제 안 하고 member_yn 플래그만 'N'으로 치환하는 소프트 딜리트 방식 사용함.
+    -->
     <update id="withdrawMember">
         UPDATE T_Member
         SET member_yn = 'N'
         WHERE member_code = #{memberCode}
     </update>
 
-    <!-- 아이디 중복 확인 -->
+    <!-- 
+        아이디 중복 카운트용
+        회원가입화면 뜰 때 중복되는 명수(int) 뱉음.
+    -->
     <select id="countById" parameterType="string" resultType="int">
         SELECT COUNT(*)
         FROM T_Member
@@ -77,26 +108,43 @@
         AND member_yn = 'Y'
     </select>
 
-    <!-- 이메일 중복 확인 -->
+    <!-- 
+        이메일 유일성 점검
+        악의적으로 여러 계정 생성하는 거 막기
+    -->
     <select id="countByEmail" parameterType="string" resultType="int">
         SELECT COUNT(*) FROM T_Member WHERE email = #{email} AND member_yn = 'Y'
     </select>
-    <!-- 전화번호 중복 확인 -->
+
+    <!-- 
+        연락처 유일성 점검
+        MSA에서 영화나 자전거 서비스랑 식별할 때 폰번호가 공통키로 쓰여서 중복 체크 필수임.
+    -->
     <select id="countByPhoneNum" parameterType="string" resultType="int">
         SELECT COUNT(*) FROM T_Member WHERE phone_num = #{phoneNum} AND member_yn = 'Y'
     </select>
 
-    <!-- 이름+이메일로 회원 조회 (아이디 찾기)  -->
+    <!-- 
+        아이디 찾기
+        이름이랑 이메일 조건 둘 다 맞는 사람만 뽑아줌
+    -->
     <select id="findByNameAndEmail" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT * FROM T_Member WHERE name = #{name} AND email = #{email} AND member_yn = 'Y'
     </select>
-    <!-- 아이디+이메일로 회원 조회 (비밀번호 재설정/임시비번)  -->
+    
+    <!-- 
+        사용자 본인 이중 확인
+        비번 재설정 넘어가기 전에 아이디랑 이메일 매치되는지 검사
+    -->
     <select id="findByIdAndEmail" resultType="com.hulahoop.blueback.member.model.dto.MemberDTO">
         SELECT * FROM T_Member WHERE id = #{id} AND email = #{email} AND member_yn = 'Y'
     </select>
 
-
-    <!-- 마지막 회원 코드 조회 -->
+    <!-- 
+        최신 시퀀스 고유키 채번 로직
+        새로 가입하는 회원이면 "U00000003" 다음 번호 붙여줘야 되니까, 
+        가장 번호 높은 거 내림차순(DESC) 세우고 맨 위에 거(LIMIT 1) 하나만 쏙 빼옴.
+    -->
     <select id="findLastMemberCode" resultType="string">
         SELECT member_code
         FROM T_Member

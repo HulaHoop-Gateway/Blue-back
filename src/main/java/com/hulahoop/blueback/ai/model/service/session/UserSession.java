@@ -4,16 +4,16 @@ import java.util.*;
 
 public class UserSession {
 
-    // ✅ 단계 정의 업데이트 (BIKE_PAYMENT_CONFIRM, MOVIE_PAYMENT_CONFIRM 단계 추가)
+    //  단계 정의 업데이트 (BIKE_PAYMENT_CONFIRM, MOVIE_PAYMENT_CONFIRM 단계 추가)
     public enum Step {
         IDLE,
         BRANCH_SELECT,
         MOVIE_SELECT,
         SEAT_SELECT,
-        MOVIE_PAYMENT_CONFIRM, // ✅ 영화 예약 결제 대기 단계 추가
+        MOVIE_PAYMENT_CONFIRM, //  영화 예약 결제 대기 단계 추가
         BIKE_SELECT,
         BIKE_TIME_INPUT,
-        BIKE_PAYMENT_CONFIRM // ✅ 자전거 예약 결제 버튼 노출 및 확인 대기 단계
+        BIKE_PAYMENT_CONFIRM //  자전거 예약 결제 버튼 노출 및 확인 대기 단계
     }
 
     // 플로우 타입 구분
@@ -22,7 +22,7 @@ public class UserSession {
     }
 
     private Step step = Step.IDLE;
-    private FlowType flowType = FlowType.NONE; // ✅ FlowType은 유지
+    private FlowType flowType = FlowType.NONE; //  FlowType은 유지
 
     private final List<Map<String, Object>> history = new ArrayList<>();
     private final Map<String, Object> bookingContext = new HashMap<>();
@@ -93,10 +93,10 @@ public class UserSession {
         history.add(entry);
     }
 
-    // ✅ 세션 초기화 (FlowType도 초기화)
+    //  세션 초기화 (FlowType도 초기화)
     public void reset() {
         step = Step.IDLE;
-        flowType = FlowType.NONE; // ✅ FlowType도 초기 상태로 초기화해야 합니다.
+        flowType = FlowType.NONE; //  FlowType도 초기 상태로 초기화해야 합니다.
         history.clear();
         bookingContext.clear();
         lastCinemas.clear();

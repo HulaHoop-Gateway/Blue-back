@@ -11,7 +11,7 @@ public class MemberDTO {
     private String address;
     private String userType;
     private String notificationStatus;
-    private String memberYn; // ✅ 회원 여부 (Y/N)
+    private String memberYn; // 탈퇴 여부 - Y면 유효한 회원, N이면 탈퇴 처리된 상태
 
     // ===== Getter / Setter =====
 

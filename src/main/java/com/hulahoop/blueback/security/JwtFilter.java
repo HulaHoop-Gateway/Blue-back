@@ -12,12 +12,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
+// JWT 필터 핵심: 클라이언트가 우리 서버로 요청을 보낼 때, 컨트롤러에 도착하기 전 맨 앞에서 먼저 가로채서 검사하는 녀석임
+// OncePerRequestFilter를 상속받으면 사용자의 단일 요청당 무조건 딱 한 번만 실행되는 것을 보장해줌
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
 
-    // 공개 허용 경로 목록
+    // 로그인, 회원가입, 내 비밀번호 찾기처럼 '아직 로그인 전이라 토큰이 아예 없는 상황'에서
+    // 사용자가 접근해도 막지 말아야 할 URL들을 묶어놓은 리스트
+    // 나중에 코드 로직에서 이 리스트에 포함된 경로는 토큰 여부를 묻지도 따지지도 않고 바로 프리패스시킴
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/login",
             "/api/member/signup",
@@ -26,6 +30,7 @@ public class JwtFilter extends OncePerRequestFilter {
             "/api/member/check-phone",
             "/api/member/find-id",
             "/api/member/reset-password",
+            "/api/ai/reset",
             "/api/payments",
             "/api/payments/create",
             "/api/payments/confirm");
@@ -34,48 +39,63 @@ public class JwtFilter extends OncePerRequestFilter {
         this.jwtUtil = jwtUtil;
     }
 
+    // 여기가 필터의 메인 동작 흐름
     @Override
     protected void doFilterInternal(HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain)
             throws ServletException, IOException {
 
+        // 지금 클라이언트가 어디로 무슨 방식(GET, POST 등)으로 오고 있는지 확인
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        System.out.println("🔍 [JwtFilter] 요청 경로: " + path + " | 메소드: " + method);
+        System.out.println("[JwtFilter] 요청 경로: " + path + " | 메소드: " + method);
 
-        // 1) OPTIONS 요청은 항상 통과 (CORS)
+        // 중요 포인트: 브라우저는 다른 도메인으로 진짜 데이터를 보내기 전에 안전한지 살피려고 OPTIONS 메소드로 찔러봄(Preflight
+        // Request)
+        // 이 OPTIONS 요청은 토큰 없이 빈몸으로 날아오기 때문에, 이 단계에서 토큰 검사를 해버리면 무조건 컷트당함 (CORS 오류 발생의
+        // 주범임)
+        // 그래서 OPTIONS 요청은 쿨하게 바로 통과시켜야 함
         if ("OPTIONS".equalsIgnoreCase(method)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 2) 공개 경로는 JWT 검증 제외
+        // 우리가 위에서 등록한 토큰 필요없는 공개 경로 목록인지 확인
+        // 만약 맞다면 쓸데없이 헤더 까서 토큰 검증할 필요 없으니 바로 통과시킴
         if (isPublicPath(path)) {
-            System.out.println("✅ [JwtFilter] 공개 경로 - JWT 검증 건너뜀: " + path);
+            System.out.println("[JwtFilter] 공개 경로 - JWT 검증 건너뜀: " + path);
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 3) JWT Authorization 헤더 검증
+        // --- 여기서부터는 필수로 토큰이 있어야 하는 경로들임 ---
+
+        // HTTP 요청 헤더에서 'Authorization' 이라는 이름으로 된 값을 빼옴
+        // JWT 방식은 기본적으로 "Bearer 나토큰이다어쩌고저쩌고" 형태로 보내는 게 전세계 공통 규칙임
         String authHeader = request.getHeader("Authorization");
 
+        // 헤더 자체가 없거나, "Bearer "로 제대로 시작하지 않으면 문전박대
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            System.err.println("❌ [JwtFilter] Authorization 헤더 없음 또는 잘못된 형식: " + path);
+            System.err.println("[JwtFilter] Authorization 헤더 없음 또는 형식 오류: " + path);
             sendJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, "MISSING_TOKEN",
                     "로그인이 필요합니다. Authorization 헤더가 없거나 형식이 잘못되었습니다.");
             return;
         }
 
+        // 인증 텍스트에서 불필요한 "Bearer " (공백 포함 7글자) 문자열을 잘라내고, 순수한 토큰 문자열만 확보함
         String token = authHeader.substring(7);
-        System.out.println("🔑 [JwtFilter] JWT 토큰 검증 시작...");
+        System.out.println("[JwtFilter] JWT 토큰 검증 시작...");
 
-        // 토큰 검증
+        // JwtUtil의 헬퍼 메서드를 써서 이 토큰이 만료됐거나, 변조됐거나, 이상한 게 아닌지 검증
+        // 값이 문제가 있으면 안쪽으로 진입함
         if (!jwtUtil.validateToken(token)) {
+            // 어떤 이유로 실패했는지 원인을 문자열로 가져옴 ("TOKEN_EXPIRED" 등등)
             String errorType = jwtUtil.getValidationError(token);
-            System.err.println("❌ [JwtFilter] JWT 검증 실패 - 원인: " + errorType);
+            System.err.println("[JwtFilter] JWT 검증 실패 - 원인: " + errorType);
 
+            // 실패 원인에 따라 프론트 개발자가 원인을 직관적으로 파악할 수 있도록 우리말로 에러 메시지 매핑
             String errorMessage = switch (errorType) {
                 case "TOKEN_EXPIRED" -> "토큰이 만료되었습니다. 다시 로그인해주세요.";
                 case "TOKEN_MALFORMED" -> "토큰 형식이 올바르지 않습니다.";
@@ -84,47 +104,60 @@ public class JwtFilter extends OncePerRequestFilter {
                 default -> "유효하지 않은 토큰입니다.";
             };
 
+            // 필터에서 직접 401(Unauthorized) 찍고 메시지를 JSON으로 만들어서 브라우저에 던지고 종료
             sendJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, errorType, errorMessage);
             return;
         }
 
-        // 토큰에서 사용자 정보 추출
-        String username = jwtUtil.extractUsername(token);
-        System.out.println("✅ [JwtFilter] JWT 검증 성공 - 사용자: " + username);
+        // --- 여기까지 코드가 왔다는 건 = 토큰이 정상이라는 뜻 ---
 
+        // 토큰 까서 이 사람이 누구인지 아이디(Username) 알아냄
+        String username = jwtUtil.extractUsername(token);
+        System.out.println("[JwtFilter] JWT 검증 성공 - 사용자: " + username);
+
+        // 스프링 시큐리티한테 "어, 이 사람 인증된 회원이야. 아이디 남겨놓을게" 라고 알려줄 통행증 생성
+        // 권한이나 비밀번호는 여기서 필요 없으니 null로 넣음 (토큰 자체가 이미 증명서니까)
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(username,
                 null, null);
 
+        // 우리가 만든 통행증(Authentication 객체)을 SecurityContextHolder(스프링의 전역 보안 저장소)에 보관함
+        // 이렇게 해두면 뒤에 있는 MemberController 같은 곳에서 `@AuthenticationPrincipal`만 써도 유저 정보를
+        // 날름 꺼내올 수 있음
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        // 4) 다음 필터로 진행
+        // 무사히 모든 검문을 마쳤으니 원래 가려던 다음 필터나 최종 컨트롤러로 요청을 보내줌
         filterChain.doFilter(request, response);
     }
 
-    // 공개 허용 경로 체크
+    // 들어온 URL 경로가 공개 허용 목록들 중 하나라도 포함되는지 검사하는 헬퍼 기능
     private boolean isPublicPath(String path) {
         if (path == null)
             return false;
 
-        // 마지막 슬래시 제거
+        // /api/login/ 이렇게 뒤에 슬래시가 실수로 붙어올 경우 그냥 /api/login 이랑 똑같이 취급해주려고 공백 잘라냄
         if (path.endsWith("/")) {
             path = path.substring(0, path.length() - 1);
         }
 
+        // startsWith를 쓰는 이유: /api/payments 와 /api/payments/create 둘 다 똑같이 프리패스 시켜버리기
+        // 위해서
         return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
     }
 
-    // JSON 형식 에러 응답
+    // 필터 레벨에서는 예외 처리를 던지면 Spring의 @ExceptionHandler 같은 글로벌 에러 처리가 커버해주지 못함
+    // 그래서 HttpServletResponse를 잡고 멱살 캐리해서 수동으로 JSON 포맷 응답 객체를 만들어버리는 로직임
     private void sendJsonError(HttpServletResponse response, int status, String errorType, String message)
             throws IOException {
-        response.setStatus(status);
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
+        response.setStatus(status); // 401이나 403 같은 응답 코드 지정
+        response.setContentType("application/json"); // 나는 json을 반환할 거다 선언
+        response.setCharacterEncoding("UTF-8"); // 한글 깨지지 않게 설정
 
+        // 예쁘게 json 문자열 조립
         String jsonResponse = String.format(
                 "{\"error\": \"%s\", \"message\": \"%s\", \"status\": %d}",
                 errorType, message, status);
 
+        // response.getWriter()로 스트림을 열어서 직접 바이트/문자열을 쏴줌
         response.getWriter().write(jsonResponse);
     }
 }
