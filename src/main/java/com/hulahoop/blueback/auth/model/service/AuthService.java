@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// 실제 로그인이 맞는지 틀린지 판별하고, 토큰까지 빚어내는 핵심 비즈니스 로직 클래스
 @Service
 public class AuthService {
 
@@ -19,39 +20,44 @@ public class AuthService {
 
     public AuthService(UserMapper userMapper, JwtUtil jwtUtil) {
         this.userMapper = userMapper;
-        // BCryptPasswordEncoder는 비밀번호를 암호화/비교할 때 쓰는 스프링 시큐리티 제공 클래스
-        // 생성자에서 직접 new로 만들어도 되고, 빈으로 등록해서 주입받아도 됨
+        // 회원이 입력한 비밀번호랑 DB에 암호화되어 저장된 비밀번호를 비교하기 위해 BCrypt 툴 사용
+        // 보통 SecurityConfig에 @Bean으로 등록해놓고 가져다 써도 되지만, 여기선 독립적으로 객체 하나 파서 사용함
         this.passwordEncoder = new BCryptPasswordEncoder();
         this.jwtUtil = jwtUtil;
     }
 
-    // 로그인 요청이 들어오면 DB에서 회원 조회 후 비밀번호 비교, 맞으면 JWT 토큰 발급
+    // 아이디랑 패스워드 검증 후 토큰 발급
     public String login(String id, String rawPassword) {
         log.info("로그인 시도: {}", id);
 
+        // 1단계: DB에서 일단 이 아이디를 가진 사람이 있는지 뒤져봄
         MemberDTO member = userMapper.findById(id);
         log.info("조회된 회원 정보: {}", member);
 
-        // 아이디가 DB에 없으면 null 반환됨 - 이 경우 바로 예외 던지기
+        // 아이디 자체가 아예 DB에 등록이 안 된 유령회원이면 여기서 바로 컷 (예외 던짐)
         if (member == null) {
             log.warn("존재하지 않는 아이디: {}", id);
             throw new RuntimeException("존재하지 않는 아이디입니다.");
         }
 
-        // BCrypt는 같은 비밀번호도 매번 다르게 암호화하기 때문에 matches()로만 비교 가능
-        // rawPassword는 사용자가 입력한 원본, member.getPassword()는 DB에 저장된 암호화된 값
+        // 2단계: 아이디는 맞는데 비밀번호가 맞는지 체크
+        // BCrypt는 솔트(무작위 문자열)를 치기 때문에 같은 "1234"라도 해시값이 매번 달라서 직접 문자열 비교(==)가 불가능함
+        // 그래서 반드시 passwordEncoder.matches(내가 입력한 비번, DB에 저장된 해시값) 메서드한테 비교를 맡겨야 함
         boolean passwordMatch = passwordEncoder.matches(rawPassword, member.getPassword());
         log.info("비밀번호 일치 여부: {}", passwordMatch);
 
+        // 틀렸으면 가차없이 예외 던져서 로그인 로직 중단
         if (!passwordMatch) {
             log.warn("비밀번호 불일치: 입력={}, 저장={}", rawPassword, member.getPassword());
             throw new RuntimeException("비밀번호가 올바르지 않습니다.");
         }
 
-        // 검증 통과 시 JWT 토큰 생성 - 이 토큰을 클라이언트가 이후 요청에 담아서 보냄
+        // 3단계: 여기까지 코드가 살아남았다는 건 정상 회원이라는 뜻!
+        // JwtUtil 한테 이 회원 아이디를 주고 서명된 마패(JWT)를 만들어달라고 부탁함
         String token = jwtUtil.generateToken(member.getId());
         log.info("발급된 JWT: {}", token);
 
+        // 생성된 JWT 문자열을 컨트롤러로 넘겨줌
         return token;
     }
 }
