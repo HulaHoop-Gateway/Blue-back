@@ -44,7 +44,7 @@ public class MovieFormatter {
         return sb.toString();
     }
 
-    // 좌석 배치를 텍스트로 표현 - 예약된 좌석은 [X], 가능한 좌석은 [O]로 표시
+    // 좌석 배치를 텍스트로 표현 - 예약된 좌석은 🟥, 가능한 좌석은 🟩로 표시
     // 통로 좌석(is_aisle=1)은 공백 처리해서 시각적으로 구분
     public String formatSeats(List<Map<String, Object>> seats) {
         if (seats == null || seats.isEmpty())
@@ -76,14 +76,14 @@ public class MovieFormatter {
                 if (isAisle == 1) {
                     sb.append("   ");
                 } else {
-                    // 텍스트 기반으로 예약 여부 표시 (이모지 대신 기호 사용)
-                    sb.append(reserved ? "[X]" : "[O]").append(" ");
+                    // 시각적으로 직관적인 이모지 사용
+                    sb.append(reserved ? "🟥" : "🟩").append(" ");
                 }
             }
             sb.append("\n");
         }
 
-        sb.append("\n[O] 예약 가능 / [X] 예약됨\n");
+        sb.append("\n🟩 예약 가능 / 🟥 예약됨\n");
         if (!aisleCols.isEmpty()) {
             sb.append("*").append(String.join(",", aisleCols.stream().map(String::valueOf).toList()))
                     .append("열은 통로입니다.\n");

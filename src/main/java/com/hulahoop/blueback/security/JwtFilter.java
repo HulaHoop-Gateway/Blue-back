@@ -14,14 +14,25 @@ import java.util.List;
 
 // JWT 필터 핵심: 클라이언트가 우리 서버로 요청을 보낼 때, 컨트롤러에 도착하기 전 맨 앞에서 먼저 가로채서 검사하는 녀석임
 // OncePerRequestFilter를 상속받으면 사용자의 단일 요청당 무조건 딱 한 번만 실행되는 것을 보장해줌
+//
+// [프론트와의 연결고리]
+// Blue-front의 axiosInstance.js (src/api/axiosInstance.js) Request Interceptor에서
+// 모든 API 요청 직전에 sessionStorage의 'user_jwt' 토큰을 꺼내
+// HTTP 헤더 'Authorization: Bearer {token}' 형식으로 자동으로 꽂아서 보냄.
+// 이 필터는 그 헤더를 받아서 'Bearer '를 7글자 잘라낸 뒤 순수 토큰만 검증.
+// 검증 실패 시 sendJsonError()로 JSON을 직접 써서 401 반환 -> 프론트 Response Interceptor가 처리.
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
 
-    // 로그인, 회원가입, 내 비밀번호 찾기처럼 '아직 로그인 전이라 토큰이 아예 없는 상황'에서
+    // 로그인, 회원가입, 비밀번호 찾기처럼 '아직 로그인 전이라 토큰이 아예 없는 상황'에서
     // 사용자가 접근해도 막지 말아야 할 URL들을 묶어놓은 리스트
     // 나중에 코드 로직에서 이 리스트에 포함된 경로는 토큰 여부를 묻지도 따지지도 않고 바로 프리패스시킴
+    //
+    // [프론트와의 연결고리]
+    // axiosInstance.js에서는 이 경로들에 대해서도 Request Interceptor가 실행되며 토큰을 헤더에 꽂으려 시도함.
+    // 하지만 경로가 PUBLIC_PATHS에 포함되면 이 필터에서 검증 없이 통과시키므로, 토큰 유무가 결과에 영향 없음.
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/login",
             "/api/member/signup",
@@ -74,6 +85,11 @@ public class JwtFilter extends OncePerRequestFilter {
 
         // HTTP 요청 헤더에서 'Authorization' 이라는 이름으로 된 값을 빼옴
         // JWT 방식은 기본적으로 "Bearer 나토큰이다어쩌고저쩌고" 형태로 보내는 게 전세계 공통 규칙임
+        //
+        // [프론트와의 연결고리]
+        // axiosInstance.js Request Interceptor에서:
+        // config.headers.Authorization = `Bearer ${token}`;
+        // 이 코드가 이 헤더를 세팅함. 여기서 꺼내서 'Bearer ' 7글자 잘라낸 뒤 토큰만 검증.
         String authHeader = request.getHeader("Authorization");
 
         // 헤더 자체가 없거나, "Bearer "로 제대로 시작하지 않으면 문전박대
@@ -122,7 +138,7 @@ public class JwtFilter extends OncePerRequestFilter {
 
         // 우리가 만든 통행증(Authentication 객체)을 SecurityContextHolder(스프링의 전역 보안 저장소)에 보관함
         // 이렇게 해두면 뒤에 있는 MemberController 같은 곳에서 `@AuthenticationPrincipal`만 써도 유저 정보를
-        // 날름 꺼내올 수 있음
+        // 꺼내올 수 있음
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         // 무사히 모든 검문을 마쳤으니 원래 가려던 다음 필터나 최종 컨트롤러로 요청을 보내줌
@@ -152,7 +168,7 @@ public class JwtFilter extends OncePerRequestFilter {
         response.setContentType("application/json"); // 나는 json을 반환할 거다 선언
         response.setCharacterEncoding("UTF-8"); // 한글 깨지지 않게 설정
 
-        // 예쁘게 json 문자열 조립
+        // json 문자열 조립
         String jsonResponse = String.format(
                 "{\"error\": \"%s\", \"message\": \"%s\", \"status\": %d}",
                 errorType, message, status);
