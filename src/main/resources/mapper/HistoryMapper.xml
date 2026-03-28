@@ -3,8 +3,18 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
+<!-- 
+    HistoryMapper.java 인터페이스와 매핑되는 SQL 작성 공간
+    namespace에 인터페이스 전체 경로를 적어두면, MyBatis가 메서드 이름이랑 태그 id 값을 똑같이 매칭해서 알아서 쿼리를 실행해 줌.
+-->
 <mapper namespace="com.hulahoop.blueback.history.model.dao.HistoryMapper">
 
+    <!-- 
+        ResultMap 설정 (DB 언더바 -> 자바 카멜케이스)
+        DB에는 'transaction_num', DTO에는 'transactionNum'으로 이름이 달라서 자동 매핑이 안 되니까,
+        여기서 수동으로 1:1 연결을 해줌.
+        PK(기단키)는 id 태그 쓰고, 나머지는 result 태그 쓰면 됨.
+    -->
     <resultMap id="historyResultMap" type="com.hulahoop.blueback.history.model.dto.HistoryResponseDto">
         <id property="transactionNum" column="transaction_num"/>
 
@@ -19,7 +29,11 @@
         <result property="endDate" column="end_date"/>
     </resultMap>
 
-
+    <!-- 
+        회원별 거래 내역 통합 조회
+        마이페이지에서 노출시킬 결제/예약 내역 리스트 뽑아오는 핵심 쿼리.
+        거래 내역(History) + 회원(Member) + 가맹점(Merchant) 3개 테이블 JOIN해서 한 번에 가져옴.
+    -->
     <select id="findHistoryByMemberCode" resultMap="historyResultMap">
         SELECT
             t.transaction_num,
@@ -27,6 +41,12 @@
             mc.merchant_name AS merchant_name,
             t.amount_used,
             t.payment_date,
+            <!--
+                취소 상태 가짜로 응답하기 로직
+                내가 예약을 취소해서 새로 '취소 기록'이 생겼다면,
+                응답 내려줄 때만 원본 거래 기록의 상태를 'R(Refund)'로 바꿔서 프론트에 넘겨줌.
+                (DB 상의 원본 데이터 status 자체를 진짜로 수정하는 건 아님!) 
+            -->
             CASE
                 WHEN EXISTS (SELECT 1 FROM T_TransactionHistory cancel WHERE cancel.original_transaction_num = t.transaction_num) THEN 'R'
                 ELSE t.status
@@ -38,7 +58,15 @@
         JOIN T_Merchant mc ON t.merchant_code = mc.merchant_code
         WHERE
             t.member_code = #{memberCode}
-            AND t.status != 'R' -- 취소 기록 자체는 제외 (원본 기록의 상태를 R로 변경해서 보여줌)
+            <!-- 껍데기용 환불 레코드 자체는 리스트 노출에서 제외 -->
+            AND t.status != 'R' 
+            
+        <!-- 
+            동적 쿼리 분기 처리 (<if> 태그)
+            요청 파라미터로 status 값이 올 때만 WHERE 문을 동적으로 더 이어 붙임.
+            - R(취소) 조건: 연결된 취소 기록이 있는 원본 거래만 뽑음
+            - 그 외: 상태가 똑같고 취소 기록이 안 달린 거래만 뽑음
+        -->
         <if test="status != null and status != ''">
             AND (
                 (#{status} = 'R' AND EXISTS (SELECT 1 FROM T_TransactionHistory cancel WHERE cancel.original_transaction_num = t.transaction_num))
@@ -50,6 +78,10 @@
             t.payment_date DESC, t.transaction_num DESC
     </select>
 
+    <!-- 
+        단건 거래 내역 상세 조회
+        취소 API 쏠 때, DB에 저 거래 번호가 진짜 있는지 없는지 검증하려고 씀.
+    -->
     <select id="findTransactionByNum" resultMap="historyResultMap">
         SELECT
             t.transaction_num,
@@ -68,6 +100,11 @@
         WHERE t.transaction_num = #{transactionNum}
     </select>
 
+    <!-- 
+        배치 시스템 - 미처리 트랜잭션 업데이트
+        토스페이먼츠 진행 중에 튕겼거나 오류 나서 상태가 'P(Pending)'에 머물러 있는 애들 일괄 정리.
+        벌써 시작 날짜 지났으면 쿨하게 강제로 'S(Success)' 처리해서 상태 동기화 맞춰줌.
+    -->
     <update id="updatePendingToSuccess">
         UPDATE T_TransactionHistory
         SET status = 'S'
@@ -75,6 +112,11 @@
           AND start_date &lt;= NOW()
     </update>
 
+    <!-- 
+        스케줄러 확인용 거래 내역 추출
+        배치 돌 때 로그 남기려고 잠깐 꺼내는 쿼리. 
+        전체 다 스캔하면 조회 부하 걸리니까 LIMIT 5 걸어서 몇 개만 뺀다.
+    -->
     <select id="findRecentTransactions" resultMap="historyResultMap">
         SELECT * FROM T_TransactionHistory
         ORDER BY transaction_num DESC
