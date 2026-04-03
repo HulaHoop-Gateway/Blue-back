@@ -14,11 +14,14 @@ import java.util.Map;
 
 // 마이크로서비스 아키텍처(MSA)에서 AI 서버 혼자서 영화, 자전거 DB를 다 까볼 수 없기 때문에,
 // 게이트웨이(8080)로 "얘가 영화 예매하고 싶대 처리좀!" 이라고 던지는 창구 역할을 함
+// @Service: 스프링 컨테이너에 "이게 핵심 비즈니스 로직을 처리하는 빈(Bean)이다"라고 구체적으로 등록하는 마크임.
 @Service
 public class IntentService {
 
     private static final Logger log = LoggerFactory.getLogger(IntentService.class);
-    // 보통 RestTemplate을 쓰지만, MSA 비동기 통신 체계에서는 WebFlux의 WebClient가 성능/안정성 방면에서 좋음
+    // 보통 RestTemplate을 쓰지만, MSA 플랫폼 체계에서는 WebFlux의 WebClient가 성능/안정성 방면에서 좋음
+    // WebClient 원리: RestTemplate은 요청을 보내고 끝날 때까지 멍때리는(Blocking) 구조지만, WebClient는
+    // Non-blocking(콜백) 방식이라 기다리는 동안 다른 일을 할 수 있어서 대용량 트래픽에 아주 강력함.
     private final WebClient webClient;
 
     public IntentService(WebClient.Builder webClientBuilder) {
@@ -48,7 +51,7 @@ public class IntentService {
             // WebClient를 이용해 논블로킹, 혹은 블로킹(.block()) 방식으로 HTTP 요청 발생
             Map<String, Object> result = webClient.post()
                     .uri(gatewayUri)
-                    //  중요 포인트: Gateway는 바디를 뜯어보기 전 필터 단계에서 이 'intent' 헤더값을 훔쳐보고 라우팅(어떤 서버로 갈지)을
+                    // 중요 포인트: Gateway는 바디를 뜯어보기 전 필터 단계에서 이 'intent' 헤더값을 훔쳐보고 라우팅(어떤 서버로 갈지)을
                     // 결정함
                     .header("intent", intent)
                     .bodyValue(requestBody)

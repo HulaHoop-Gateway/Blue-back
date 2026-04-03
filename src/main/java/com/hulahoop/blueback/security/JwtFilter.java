@@ -13,15 +13,14 @@ import java.io.IOException;
 import java.util.List;
 
 // JWT 필터 핵심: 클라이언트가 우리 서버로 요청을 보낼 때, 컨트롤러에 도착하기 전 맨 앞에서 먼저 가로채서 검사하는 녀석임
-// OncePerRequestFilter를 상속받으면 사용자의 단일 요청당 무조건 딱 한 번만 실행되는 것을 보장해줌
-//
 // [프론트와의 연결고리]
 // Blue-front의 axiosInstance.js (src/api/axiosInstance.js) Request Interceptor에서
-// 모든 API 요청 직전에 sessionStorage의 'user_jwt' 토큰을 꺼내
-// HTTP 헤더 'Authorization: Bearer {token}' 형식으로 자동으로 꽂아서 보냄.
-// 이 필터는 그 헤더를 받아서 'Bearer '를 7글자 잘라낸 뒤 순수 토큰만 검증.
-// 검증 실패 시 sendJsonError()로 JSON을 직접 써서 401 반환 -> 프론트 Response Interceptor가 처리.
+// 모든 API 요청 직전에 sessionStorage의 'user_jwt' 토큰을 꺼내 HTTP 헤더에 자동으로 꽂아서 보냄.
+//
+// @Component: "스프링아, 이 커스텀 필터 클래스도 네가 관리하는 부품(Bean) 중 하나로 등록해서 다른 곳에서 쓸 수 있게 해체다오~" 하고 선언하는 마크임.
 @Component
+// 상속(extends): 스프링 코어가 이미 잘 만들어둔 OncePerRequestFilter(단일 요청당 무조건 딱 1번만 실행됨을
+// 보장하는 필터)의 모든 뼈대와 기능을 그대로 물려받아(상속) 내 맘대로 살을 얹음.
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
@@ -51,6 +50,8 @@ public class JwtFilter extends OncePerRequestFilter {
     }
 
     // 여기가 필터의 메인 동작 흐름
+    // @Override: 부모 필터(OncePerRequestFilter)가 가진 빈 껍데기 메서드를, 내가 짜놓은 나만의 토큰 검증 로직으로
+    // 완전히 덮어써서 재정의(다형성 작동) 하겠다는 뜻임.
     @Override
     protected void doFilterInternal(HttpServletRequest request,
             HttpServletResponse response,
@@ -67,7 +68,7 @@ public class JwtFilter extends OncePerRequestFilter {
         // Request)
         // 이 OPTIONS 요청은 토큰 없이 빈몸으로 날아오기 때문에, 이 단계에서 토큰 검사를 해버리면 무조건 컷트당함 (CORS 오류 발생의
         // 주범임)
-        // 그래서 OPTIONS 요청은 쿨하게 바로 통과시켜야 함
+        // 그래서 OPTIONS 요청은 바로 통과시켜야 함
         if ("OPTIONS".equalsIgnoreCase(method)) {
             filterChain.doFilter(request, response);
             return;
@@ -161,7 +162,7 @@ public class JwtFilter extends OncePerRequestFilter {
     }
 
     // 필터 레벨에서는 예외 처리를 던지면 Spring의 @ExceptionHandler 같은 글로벌 에러 처리가 커버해주지 못함
-    // 그래서 HttpServletResponse를 잡고 멱살 캐리해서 수동으로 JSON 포맷 응답 객체를 만들어버리는 로직임
+    // 그래서 HttpServletResponse를 잡고 수동으로 JSON 포맷 응답 객체를 만들어버리는 로직임
     private void sendJsonError(HttpServletResponse response, int status, String errorType, String message)
             throws IOException {
         response.setStatus(status); // 401이나 403 같은 응답 코드 지정

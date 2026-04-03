@@ -9,19 +9,29 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 // 회원의 가입, 정보 조회, 수정, 탈퇴 등 회원과 관련된 모든 요청을 받는 컨트롤러
+// @RestController: 이 클래스가 프론트엔드의 요청을 받아주는 접수처(Controller) 역할을 한다는 뜻.
+// 옛날 @Controller는 HTML 화면을 찾아서 리턴했지만, RestController 안에는 @ResponseBody라는 무기가 숨어있어서 화면 대신 JSON 같은 순수 데이터값만 프론트(리액트)로 바로 쏴주는 'REST API 서버' 전용 마크임.
 @RestController
+// @RequestMapping: 이 클래스 안에 있는 모든 메서드들의 기본 공통 URL 주소를 '/api/member'로 세팅해줌. (매번
+// 적기 귀찮음을 방지)
 @RequestMapping("/api/member")
 public class MemberController {
 
     private final MemberService memberService;
 
+    // 생성자 주입 원리: 스프링 컨테이너가 켜질 때, 스스로 자기가 쥐고 있는 MemberService 객체(빈)를 알아서 찾아서
+    // 이 컨트롤러가 태어날 때 자동으로 꽂아줌. 이를 '의존성 주입(DI)'이라고 부름.
     public MemberController(MemberService memberService) {
         this.memberService = memberService;
     }
 
     // 신규 회원가입 버튼을 눌렀을 때 호출
     // 비밀번호 해싱이나 중복 체크 등 복잡한 건 서비스가 알아서 처리하니까, 컨트롤러는 예외가 안 터지면 200 OK만 내려줌
+    // @PostMapping: 오직 프론트에서 넘어온 HTTP 요청 방식이 POST(데이터 생성)일 때만 이 메서드가 반응함. 최종 URL은
+    // '/api/member/signup'이 됨.
     @PostMapping("/signup")
+    // @RequestBody: 프론트에서 날아오는 JSON 형태의 생데이터를 뜯어서 스프링이 MemberDTO 자바 객체로
+    // 변환해(역직렬화) 집어넣어 달라는 뜻.
     public ResponseEntity<?> registerMember(@RequestBody MemberDTO dto) {
         try {
             memberService.register(dto);
@@ -37,7 +47,9 @@ public class MemberController {
     // 회원가입 전 필수 관문인 '아이디 중복 확인' API
     // 이 경로는 아직 로그인을 안 한 사람도 찔러봐야 하므로 JwtFilter의 PUBLIC_PATHS 쪽에 등록되어 있음
     // DB에 아이디가 없으면 available: true 리턴
+    // @GetMapping: 프론트 요청이 GET(조회) 방식일 때만 반응함.
     @GetMapping("/check-id")
+    // @RequestParam: 프론트가 URL 뒤에 ?id=test 형식(쿼리스트링)으로 보낸 파라미터 값을 쏙 뽑아내는 어노테이션임.
     public ResponseEntity<?> checkId(@RequestParam String id) {
         boolean available = memberService.isIdAvailable(id);
         return ResponseEntity.ok(Map.of("available", available));
@@ -109,6 +121,7 @@ public class MemberController {
     }
 
     // 내 정보 수정 요청
+    // @PatchMapping: 데이터의 일부분만 수정할 때 사용하는 규약(Patch)을 따르는 HTTP 요청을 받음.
     @PatchMapping("/update")
     public ResponseEntity<?> updateMember(@RequestBody MemberDTO dto, Authentication authentication) {
         if (authentication == null) {
@@ -159,6 +172,7 @@ public class MemberController {
     // 회원 탈퇴 버튼
     // 보통 실서비스에서는 사용자 데이터를 진짜 DELETE로 날리지 않음 (나중에 증빙자료나 복구를 대비)
     // 그래서 상태값(member_yn)만 'N'으로 바꿔버리는 '소프트 딜리트' 처리를 주로 함
+    // @DeleteMapping: 리소스 삭제를 의미하는 HTTP Delete 방식 요청을 받음.
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteMember(Authentication authentication) {
         if (authentication == null) {

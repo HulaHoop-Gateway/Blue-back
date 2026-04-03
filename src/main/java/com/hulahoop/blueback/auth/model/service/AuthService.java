@@ -9,11 +9,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 // 실제 로그인이 맞는지 틀린지 판별하고, 토큰까지 빚어내는 핵심 비즈니스 로직 클래스
+// @Service: 에너테이션을 달아 컴파일러에게 이 곳이 단순 데이터 전달이 아닌 "핵심 주요 비즈니스 로직"이 굴러가는 중심지임을 알리고 빈(Bean)으로 등록함.
 @Service
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
+    // 객체지향 캡슐화의 원칙에 따라 private으로 선언해 외부 접근을 닫고,
+    // 생성자에서 한 번 꽂히면 절대로 불변하도록 final을 명시하여 안전성을 챙김 (권장 패턴).
     private final UserMapper userMapper;
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;

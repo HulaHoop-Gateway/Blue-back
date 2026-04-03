@@ -8,9 +8,12 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.SimpleMailMessage;
 
 // DB 트랜잭션, 데이터 조작 등 회원과 관련된 실질적인 "작업"을 전담하는 서비스 클래스
+// @Service: "스프링아, 이 클래스는 우리 프로그램의 핵심 브레인(비즈니스 로직) 역할을 하는 놈이니까 네가 직접 관리하는 빈(Bean)으로 등록해라~" 하고 알려주는 마크임.
 @Service
 public class MemberService {
 
+    // final 키워드: 한 번 스프링한테 초기 주입받으면 프로그램 끝날 때까지 절대 다른 객체로 바뀌지 않도록 단단히 박아두는 못 구실을 함.
+    // (안전성 보장)
     private final UserMapper userMapper;
 
     // DB에 날것의 비밀번호가 털리지 않게 막아주기 위한 해시 암호화 객체
@@ -20,6 +23,8 @@ public class MemberService {
     // application.yml에 구글 SMTP 세팅을 해뒀기 때문에 그걸 인식해서 주입됨
     private final JavaMailSender mailSender;
 
+    // 스프링의 팩토리(IoC 컨테이너)가 켜질 때 이 생성자를 보고 "아! UserMapper랑 JavaMailSender가 필요하구나!"
+    // 깨닫고 알아서 끼워줌.
     public MemberService(UserMapper userMapper, JavaMailSender mailSender) {
         this.userMapper = userMapper;
         this.mailSender = mailSender;

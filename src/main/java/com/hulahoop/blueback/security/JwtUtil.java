@@ -12,11 +12,14 @@ import java.util.Date;
 
 // JwtUtil: 실질적으로 JWT 토큰을 만들고, 까서 확인하고, 만료시간 등을 관리하는 도우미 클래스
 // 다른 서비스나 필터에서 이 클래스를 불러와서 토큰 관련 작업을 처리함
+// @Component: 마찬가지로 이 유틸 클래스를 스프링 컨테이너에 싱글톤 부품(빈)으로 등록해서, 필터나 서비스 등 이곳저곳에서 의존성 주입(DI) 받아 맘껏 돌려 쓸 수 있게 만듦.
 @Component
 public class JwtUtil {
 
-    // 토큰을 만들 때 사용하는 서명용 비밀키. application.yml 파일에서 jwt.secret 값을 가져와서 주입받음
-    // 이 키가 유출되면 아무나 가짜 토큰을 만들 수 있으므로 절대 코드에 하드코딩하면 안 됨
+    // 토큰을 만들 때 사용하는 서명용 비밀키. 이 키가 유출되면 아무나 가짜 토큰을 만들 수 있으므로 절대 자바 코드에 대놓고 치지(하드코딩)
+    // 않음.
+    // @Value: application.yml 설정 파일에 보관된 중요한 환경변수 값(jwt.secret 등)을 쏙 뽑아서 이 자바 변수
+    // 안에 동적으로 주입해주는 어노테이션임.
     @Value("${jwt.secret}")
     private String secret;
 
@@ -27,9 +30,10 @@ public class JwtUtil {
     // 위자료(secret)를 가공해서 만든 실제 암호화 키 객체
     private Key secretKey;
 
-    // 빈이 생성되고 의존성 주입이 끝난 직후에 딱 한 번 자동으로 실행되는 메서드 (초기화 단계)
-    // String 형태의 secret 값을 HMAC-SHA 알고리즘에 쓸 수 있는 Key 객체로 변환함
-    // 우리는 Base64 인코딩을 거치지 않고 직접 getBytes()로 바이트 배열을 뽑아서 키를 만듦
+    // @PostConstruct: 스프링이 이 JwtUtil 빈 클래스를 처음 청사진대로 찍어내고 + 위에서 본 @Value 의존성 주입까지 싹
+    // 다 끝마친 직후에,
+    // 딱 1번만 자동으로 실행되게 예약 걸어두는 '초기화 전용 마크'임.
+    // String 형태의 secret 값을 HMAC-SHA 알고리즘에 쓸 수 있는 진짜 Key 객체로 변환해서 저장해둠.
     @PostConstruct
     public void init() {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());

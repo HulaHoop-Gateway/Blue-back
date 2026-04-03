@@ -58,7 +58,7 @@ public class KakaoLocalService {
     }
 
     // 챗봇 대화 중에 "강남역 자전거 찾아줘" 이랬을 때 카카오맵 키워드 검색을 위해
-    // 문장에서 ~역, ~동, ~구, ~시 로 끝나는 단어만 쏙 뽑아내는 꼼수 로직
+    // 문장에서 ~역, ~동, ~구, ~시 로 끝나는 단어만 쏙 뽑아내는 로직
     public String extractPlaceKeyword(String input) {
         if (input == null)
             return null;
@@ -338,7 +338,7 @@ public class KakaoLocalService {
 
         for (Map<String, Object> bike : bikes) {
             // 특이사항: 영화관과 달리, 자전거 공공데이터는 이미 위/경도를 DB에 바로 들고 있음
-            // 그래서 카카오 API를 매번 쏠 필요 없이 그냥 DB 값 꺼내서 수식 돌리면 됨 (개꿀)
+            // 그래서 카카오 API를 매번 쏠 필요 없이 그냥 DB 값 꺼내서 수식 돌리면 됨
             Object latObj = bike.get("latitude");
             Object lngObj = bike.get("longitude");
 

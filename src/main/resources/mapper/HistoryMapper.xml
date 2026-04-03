@@ -103,7 +103,7 @@
     <!-- 
         배치 시스템 - 미처리 트랜잭션 업데이트
         토스페이먼츠 진행 중에 튕겼거나 오류 나서 상태가 'P(Pending)'에 머물러 있는 애들 일괄 정리.
-        벌써 시작 날짜 지났으면 쿨하게 강제로 'S(Success)' 처리해서 상태 동기화 맞춰줌.
+        벌써 시작 날짜 지났으면 강제로 'S(Success)' 처리해서 상태 동기화 맞춰줌.
     -->
     <update id="updatePendingToSuccess">
         UPDATE T_TransactionHistory

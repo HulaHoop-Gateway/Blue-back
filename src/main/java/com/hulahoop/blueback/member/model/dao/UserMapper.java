@@ -6,9 +6,13 @@ import org.apache.ibatis.annotations.Param;
 
 // MyBatis 프레임워크가 이 인터페이스를 보고 자동으로 구현체를 만들어주는 곳 (DAO 역할)
 // 실제 SQL 쿼리문은 resources/mapper/UserMapper.xml 파일 안에 적혀있고, 메서드 이름이 XML의 id값과 매칭됨
+// @Mapper: 마이바티스가 이 어노테이션을 보고 "아, DB랑 통신하는 껍데기 인터페이스구나!" 하고 인식함. 
+// 이거 하나만 달아두면 우리가 직접 복잡한 JDBC 코드를 짤 필요 없이, 스프링이 뒤에서 XML 쿼리문과 자바 메서드를 1:1로 매핑해주는 구현체를 자동으로 생성해 줌.
 @Mapper
 public interface UserMapper {
 
+    // @Param: 자바 단에서 넘긴 변수(id)가 XML 쿼리문 안에서 #{id} 처럼 똑바로 매칭해서 꺼내 쓸 수 있도록 데이터에 명찰을
+    // 달아주는 어노테이션임.
     // 아이디(userId)를 조건으로 회원 테이블(member) 단건 조회
     MemberDTO findById(@Param("id") String id);
 

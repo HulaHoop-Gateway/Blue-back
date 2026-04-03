@@ -32,6 +32,8 @@ public class GeminiService {
     private final Map<String, UserSession> userSessions = new HashMap<>();
 
     // application.yml에 숨겨둔 구글 Gemini API 키 주입
+    // @Value: 설정 파일(application.yml)에 위치한 변수 값을 스프링이 구동될 때 쏙 뽑아서 이 변수 안에 동적으로 꽂아주는
+    // ма법의 어노테이션임.
     @Value("${gemini.api.key}")
     private String apiKey;
 
@@ -44,7 +46,8 @@ public class GeminiService {
         this.bikeFlowRouter = bikeFlowRouter;
     }
 
-    // synchronized 키워드를 붙여서, 같은 유저가 동시에 여러번 따닥 눌렀을 때 세션 데이터가 엉키는 동시성 문제를 방지함
+    // synchronized 키워드: 다중 스레드 환경에서 여러 사용자가 동시에 이 메서드에 들어올 때,
+    // 한 번에 하나의 스레드만 들어오게 잠금(Lock)을 걸어서 메모리의 세션 데이터가 엉키는 '동시성 문제'를 방지하는 자바의 근본 문법임.
     public synchronized AiResponseDTO askGemini(String prompt, String userId) {
 
         // 로그인 안 한 사람이 여기까지 우회해서 들어왔다면 바로 커트시킴

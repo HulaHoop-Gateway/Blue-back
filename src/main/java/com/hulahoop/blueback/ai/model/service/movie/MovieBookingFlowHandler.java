@@ -12,6 +12,7 @@ import java.util.*;
 
 //  영화 예약 5단계 플로우를 총괄하는 지휘통제실 
 // 제미나이가 "이거 영화 예약이네!" 하고 여기로 넘기면, 이 클래스가 사용자의 진행 상태(Step)를 보면서 순서대로 이끌어줌
+// @Component: @Service나 @Controller처럼 특정한 역할이 딱 정해지지 않은 일반적인 스프링 관리 객체(Bean)를 팩토리에 등록할 때 쓰는 가장 무난하고 기본적인 어노테이션임.
 @Component
 public class MovieBookingFlowHandler {
 
@@ -35,6 +36,9 @@ public class MovieBookingFlowHandler {
     }
 
     // 제네릭 캐스팅 경고 없애주는 유틸
+    // @SuppressWarnings("unchecked"): 제네릭 타입 캐스팅(형변환)을 할 때 컴파일러가 "이거 진짜 캐스팅하려는
+    // 타입(List) 맞음? 아닐 수도 있잖아 조심해!"
+    // 하고 띄우는 귀찮은 노란색 경고줄을 무시하라고 지시하는 어노테이션임.
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> safeList(Object obj) {
         return (obj instanceof List) ? (List<Map<String, Object>>) obj : new ArrayList<>();
@@ -258,7 +262,7 @@ public class MovieBookingFlowHandler {
             // 상태 진급
             s.setStep(UserSession.Step.SEAT_SELECT);
 
-            //  매우 중요: 프론트엔드 리액트가 이 응답을 받을 때, 밑에 숨겨놓은 JSON 문구를 파싱해서
+            // 매우 중요: 프론트엔드 리액트가 이 응답을 받을 때, 밑에 숨겨놓은 JSON 문구를 파싱해서
             // 모달창에 진짜 좌석 UI를 예쁘게 그려주도록 트리거 역할을 하는 특수 로직임
             String hiddenJson = String.format("{\"scheduleNum\":%s}", sel.get("scheduleNum"));
 
@@ -335,7 +339,7 @@ public class MovieBookingFlowHandler {
             s.getBookingContext().put("seatLabels", seatLabels);
             s.getBookingContext().put("amount", totalAmount);
 
-            //  프론트엔드가 토스페이먼츠 연동을 띄우기 위해서 읽어갈 숨김 JSON 데이터
+            // 프론트엔드가 토스페이먼츠 연동을 띄우기 위해서 읽어갈 숨김 JSON 데이터
             String jsonData = String.format(
                     "{\"actionType\":\"PAYMENT_CONFIRM\",\"amount\":%d,\"phone\":\"%s\",\"paymentType\":\"MOVIE\"}",
                     totalAmount, phoneNumber);
