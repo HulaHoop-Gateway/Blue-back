@@ -8,17 +8,30 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+// 회원의 가입, 정보 조회, 수정, 탈퇴 등 회원과 관련된 모든 요청을 받는 컨트롤러
+// @RestController: 이 클래스가 프론트엔드의 요청을 받아주는 접수처(Controller) 역할을 한다는 뜻.
+// 옛날 @Controller는 HTML 화면을 찾아서 리턴했지만, RestController 안에는 @ResponseBody라는 무기가 숨어있어서 화면 대신 JSON 같은 순수 데이터값만 프론트(리액트)로 바로 쏴주는 'REST API 서버' 전용 마크임.
 @RestController
+// @RequestMapping: 이 클래스 안에 있는 모든 메서드들의 기본 공통 URL 주소를 '/api/member'로 세팅해줌. (매번
+// 적기 귀찮음을 방지)
 @RequestMapping("/api/member")
 public class MemberController {
 
     private final MemberService memberService;
 
+    // 생성자 주입 원리: 스프링 컨테이너가 켜질 때, 스스로 자기가 쥐고 있는 MemberService 객체(빈)를 알아서 찾아서
+    // 이 컨트롤러가 태어날 때 자동으로 꽂아줌. 이를 '의존성 주입(DI)'이라고 부름.
     public MemberController(MemberService memberService) {
         this.memberService = memberService;
     }
 
+    // 신규 회원가입 버튼을 눌렀을 때 호출
+    // 비밀번호 해싱이나 중복 체크 등 복잡한 건 서비스가 알아서 처리하니까, 컨트롤러는 예외가 안 터지면 200 OK만 내려줌
+    // @PostMapping: 오직 프론트에서 넘어온 HTTP 요청 방식이 POST(데이터 생성)일 때만 이 메서드가 반응함. 최종 URL은
+    // '/api/member/signup'이 됨.
     @PostMapping("/signup")
+    // @RequestBody: 프론트에서 날아오는 JSON 형태의 생데이터를 뜯어서 스프링이 MemberDTO 자바 객체로
+    // 변환해(역직렬화) 집어넣어 달라는 뜻.
     public ResponseEntity<?> registerMember(@RequestBody MemberDTO dto) {
         try {
             memberService.register(dto);
@@ -31,27 +44,32 @@ public class MemberController {
         }
     }
 
-    // ✅ [1] 아이디 중복 확인 (비회원 접근 허용)
+    // 회원가입 전 필수 관문인 '아이디 중복 확인' API
+    // 이 경로는 아직 로그인을 안 한 사람도 찔러봐야 하므로 JwtFilter의 PUBLIC_PATHS 쪽에 등록되어 있음
+    // DB에 아이디가 없으면 available: true 리턴
+    // @GetMapping: 프론트 요청이 GET(조회) 방식일 때만 반응함.
     @GetMapping("/check-id")
+    // @RequestParam: 프론트가 URL 뒤에 ?id=test 형식(쿼리스트링)으로 보낸 파라미터 값을 쏙 뽑아내는 어노테이션임.
     public ResponseEntity<?> checkId(@RequestParam String id) {
         boolean available = memberService.isIdAvailable(id);
         return ResponseEntity.ok(Map.of("available", available));
     }
 
-    // ✅ [추가] 이메일 중복 확인
+    // 동일하게 이메일이 이미 존재하는지 확인
     @GetMapping("/check-email")
     public ResponseEntity<?> checkEmail(@RequestParam String email) {
         boolean available = memberService.isEmailAvailable(email);
         return ResponseEntity.ok(Map.of("available", available));
     }
 
-    // ✅ [추가] 전화번호 중복 확인
+    // 전화번호도 하나당 계정 하나만 허용하기 위해 중복 확인
     @GetMapping("/check-phone")
     public ResponseEntity<?> checkPhone(@RequestParam String phoneNum) {
         boolean available = memberService.isPhoneNumAvailable(phoneNum);
         return ResponseEntity.ok(Map.of("available", available));
     }
 
+    // 아이디 찾기 - 프론트에서 넘어온 이름과 이메일 세트가 DB와 맞으면 아이디를 까서 보여줌
     @PostMapping("/find-id")
     public ResponseEntity<?> findId(@RequestBody Map<String, String> param) {
         String name = param.get("name");
@@ -64,6 +82,7 @@ public class MemberController {
         }
     }
 
+    // 비밀번호 재설정 - 아이디랑 이메일이 맞으면 사용자의 비밀번호를 임의의 난수로 바꿔버리고 그 번호를 메일로 쏴줌
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> param) {
         String id = param.get("id");
@@ -76,16 +95,23 @@ public class MemberController {
         }
     }
 
-    // ✅ [2] 회원정보 조회 (로그인 필요)
+    // --- 여기서부터 나오는 API들은 전부 JWT 토큰이 필수로 있어야 통과되는 경로들 ---
+
+    // 내 마이페이지 클릭 시 내 정보 가져오기
+    // 스프링 시큐리티에서 로그인(토큰 검증)된 사용자 정보를 Authentication 객체로 알아서 주입해줌
+    // 우리가 굳이 헤더에서 토큰 까고 파싱할 필요가 없음! (이미 필터가 다 해놓은 결과물)
     @GetMapping("/info")
     public ResponseEntity<?> getMemberInfo(Authentication authentication) {
+        // 혹시 모르니 빈 값이면 보안 에러 처리
         if (authentication == null) {
             return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
         }
 
+        // 토큰 발급할 때 Subject에 아이디(username)를 넣어놨기 때문에 getName()을 하면 아이디가 딸려옴
         String id = authentication.getName();
         System.out.println("[MemberController] 인증된 사용자 ID: " + id);
 
+        // 내 DB에서 최신 정보 조회해서 프론트로 전송
         MemberDTO member = memberService.getMemberInfoById(id);
         if (member == null) {
             return ResponseEntity.status(404).body("회원 정보를 찾을 수 없습니다.");
@@ -94,16 +120,21 @@ public class MemberController {
         return ResponseEntity.ok(member);
     }
 
-    // ✅ [3] 회원정보 수정
+    // 내 정보 수정 요청
+    // @PatchMapping: 데이터의 일부분만 수정할 때 사용하는 규약(Patch)을 따르는 HTTP 요청을 받음.
     @PatchMapping("/update")
     public ResponseEntity<?> updateMember(@RequestBody MemberDTO dto, Authentication authentication) {
         if (authentication == null) {
             return ResponseEntity.status(403).body("인증되지 않은 요청입니다.");
         }
 
+        // 클라이언트가 바디값(dto) 안에 남의 id를 조작해서 보낼 수도 있음
+        // 그래서 바디의 id는 싹 무시해버리고, 오직 '현재 로그인된 토큰'에서 나온 id(authentication.getName())만 확실히
+        // 믿고 덮어씌움
         String id = authentication.getName();
         System.out.println("[MemberController] 회원정보 수정 요청 ID: " + id);
 
+        // 업데이트 쿼리 칠 때 기준이 될 고유키(memberCode)를 맞추려고 기존 정보를 다시 한 번 불러와서 안전하게 세팅함
         MemberDTO existing = memberService.getMemberInfoById(id);
         dto.setId(id);
         dto.setMemberCode(existing.getMemberCode());
@@ -116,7 +147,8 @@ public class MemberController {
         }
     }
 
-    // ✅ [3-1] 비밀번호 변경
+    // 비밀번호 수정 (내가 로그인 중일 때 내 비번 바꾸는 기능)
+    // 기존 비밀번호를 한 번 더 물어보고 맞으면 그때 새 비번으로 덮어씀
     @PatchMapping("/update-password")
     public ResponseEntity<?> updatePassword(@RequestBody Map<String, String> param, Authentication authentication) {
         if (authentication == null) {
@@ -137,7 +169,10 @@ public class MemberController {
         }
     }
 
-    // ✅ [4] 회원 탈퇴
+    // 회원 탈퇴 버튼
+    // 보통 실서비스에서는 사용자 데이터를 진짜 DELETE로 날리지 않음 (나중에 증빙자료나 복구를 대비)
+    // 그래서 상태값(member_yn)만 'N'으로 바꿔버리는 '소프트 딜리트' 처리를 주로 함
+    // @DeleteMapping: 리소스 삭제를 의미하는 HTTP Delete 방식 요청을 받음.
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteMember(Authentication authentication) {
         if (authentication == null) {
@@ -148,6 +183,7 @@ public class MemberController {
         MemberDTO existing = memberService.getMemberInfoById(id);
 
         try {
+            // memberCode를 기준으로 DB에서 member_yn 상태를 'N'으로 바꾸러 서비스 호출
             memberService.withdrawMember(existing.getMemberCode());
             return ResponseEntity.ok("회원 탈퇴 완료");
         } catch (Exception e) {
